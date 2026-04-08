@@ -1,0 +1,77 @@
+## 代码规范
+
+代码规范如下
+一、函数命名规则
+函数命名主要采用驼峰命名法，具体规则如下：
+普通函数：
+函数名由若干个单词组成。第一个单词的所有字母必须小写，从第二个单词开始，每个单词的首字母大写，其余字母小写。
+示例：getMeanValue、csvToShp、computeUrbanConversionMatrix。
+特殊类型函数的修饰：
+Inline（内联）函数：必须在函数名的最前面加一个下划线 \_。
+示例：\_getCuberInterpolationValue。
+Static（静态）函数：函数名的第一个单词的首字母必须大写（即大驼峰命名法）。
+示例：OpenFiles。
+二、变量命名规则
+变量命名严格遵循匈牙利命名法，通过前缀组合来体现变量的作用域、指针层级和数据类型。
+核心原则
+禁止使用简单英文单词：严禁直接使用如 min、max、left、right 等简单单词作为变量名，以防止与库中的保留变量名发生冲突。
+命名结构公式：变量名 \= [作用域前缀] + [指针/数组前缀] + [类型前缀] + [变量含义名称]。
+迭代变量：虽然允许使用 i、j、k、m、n 作为循环迭代变量，但不推荐。建议尽量使用有意义的名称，例如 \_nFilesIdx。
+作用域前缀规则
+根据变量定义的位置不同，需在名称前添加特定的前缀：
+全局变量：前缀为小写 w。例如：wnValue 表示全局整型变量。
+静态变量（static）：前缀为大写 S。例如：SnValue 表示静态整型变量。
+类成员变量：前缀为小写 m。例如：mnValue 表示类内的整型变量。
+普通局部变量：不需要添加作用域前缀。例如：nValue。
+临时变量：前缀为下划线 \_。例如：\_nValue。
+指针与数组前缀规则
+根据变量的维度或是否为指针，添加相应前缀：
+一维指针或数组：前缀为 p。例如：pdValues 表示普通一维双精度浮点型数组。
+二维指针或数组：前缀为 pp。例如：ppdValues 表示普通二维双精度浮点型数组。
+三维指针或数组：前缀为 ppp。例如：pppdValues 表示普通三维双精度浮点型数组。
+非指针对象：无需添加此前缀。
+数据类型前缀规则
+根据变量的具体数据类型，添加对应的缩写前缀：
+字符型：char 使用前缀 c；unsigned char 或 byte 使用前缀 u。
+整型系列：short、unsigned short、int、unsigned int 均使用前缀 n；long 或 long long 使用前缀 l。
+浮点型：float 使用前缀 f；double 使用前缀 d。
+布尔型：bool 使用前缀 b。
+字符串相关：char\* 或 string 可使用 s、str 或 sz 作为前缀。
+容器与集合：list 或 vector 使用前缀 v；map 或 hash 使用前缀 map。
+文件操作：输入文件用 in，输出文件用 out，通用文件用 fi。
+句柄与特定对象：HANDLE 使用前缀 h；GDAL相关指针使用前缀 po；控件使用前缀 ctrl。
+数据流向：源对象使用前缀 src，目的对象使用前缀 dst。
+综合命名示例
+将上述规则组合，形成完整的变量名：
+mppdDistanceMatrix：表示类成员变量（m），二维指针（pp），双精度型（d），含义为距离矩阵。
+wpvnValuesList：表示全局变量（w），指针（p），容器（v），整型（n），含义为值列表。
+mvpnValueList：表示类成员变量（m），容器（v），存储的是整型指针（p+n），含义为值列表。
+mpctrlProgBar：表示类成员变量（m），指针（p），控件（ctrl），含义为进度条。
+mpoDataset：表示类成员变量（m），指针（p），GDAL对象（o），含义为数据集。
+
+
+## 代码生成细节
+
+每个类的成员需要有明确注释表面成员的表示含义。每个类的方法要在头文件包含以下注释：
+/\*
+\*@brief：简述这个方法的主要职能
+\*@pram\_i（如果有）:简述第i个参数的含义
+\*/
+
+## 代码层次描述
+
+**`model/`**  — 纯数据结构，不含业务逻辑
+
+- 图层数据（LayerData）、分析结果（AnalysisResult）、AI消息（ChatMessage）等 struct/class
+
+**`service/`**  — 业务逻辑与算法，不含UI、不含网络细节
+
+- `AnalysisService`：空间分析算法调度
+- `DataService`：数据加载与图层管理
+
+**`core/`**  — 基础设施，与业务无关
+
+- `AINetworkClient`：与 Ollama 的 HTTP 通信
+- `AIConversationManager`：多轮对话历史管理、tool\_call 流程
+
+**`ui/`**  — 纯UI，只通过信号槽与 service/core 通信，不直接调用算法

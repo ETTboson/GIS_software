@@ -1,0 +1,438 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect><x>0</x><y>0</y><width>1400</width><height>900</height></rect>
+  </property>
+  <property name="windowTitle">
+   <string>GeoAI 智能空间分析平台</string>
+  </property>
+  <property name="dockOptions">
+   <set>QMainWindow::AllowNestedDocks|QMainWindow::AllowTabbedDocks|QMainWindow::AnimatedDocks</set>
+  </property>
+
+  <!-- ═══ Actions ═══ -->
+  <action name="actionOpenData">
+   <property name="text"><string>打开数据</string></property>
+   <property name="shortcut"><string>Ctrl+O</string></property>
+  </action>
+  <action name="actionAddLayer">
+   <property name="text"><string>添加图层</string></property>
+  </action>
+  <action name="actionSaveProject">
+   <property name="text"><string>保存工程</string></property>
+   <property name="shortcut"><string>Ctrl+S</string></property>
+  </action>
+  <action name="actionExportResult">
+   <property name="text"><string>导出结果</string></property>
+  </action>
+  <action name="actionExit">
+   <property name="text"><string>退出</string></property>
+   <property name="shortcut"><string>Ctrl+Q</string></property>
+  </action>
+  <action name="actionUndo">
+   <property name="text"><string>撤销</string></property>
+   <property name="shortcut"><string>Ctrl+Z</string></property>
+  </action>
+  <action name="actionRedo">
+   <property name="text"><string>重做</string></property>
+   <property name="shortcut"><string>Ctrl+Y</string></property>
+  </action>
+  <action name="actionZoomIn">
+   <property name="text"><string>放大</string></property>
+  </action>
+  <action name="actionZoomOut">
+   <property name="text"><string>缩小</string></property>
+  </action>
+  <action name="actionFitView">
+   <property name="text"><string>适应窗口</string></property>
+  </action>
+  <action name="actionToggleLayerPanel">
+   <property name="text"><string>图层面板</string></property>
+   <property name="checkable"><bool>true</bool></property>
+   <property name="checked"><bool>true</bool></property>
+  </action>
+  <action name="actionToggleAIPanel">
+   <property name="text"><string>AI面板</string></property>
+   <property name="checkable"><bool>true</bool></property>
+   <property name="checked"><bool>true</bool></property>
+  </action>
+  <action name="actionToggleAttrPanel">
+   <property name="text"><string>属性表</string></property>
+   <property name="checkable"><bool>true</bool></property>
+   <property name="checked"><bool>false</bool></property>
+  </action>
+  <action name="actionToggleAnalysisPanel">
+   <property name="text"><string>分析面板</string></property>
+   <property name="checkable"><bool>true</bool></property>
+   <property name="checked"><bool>false</bool></property>
+  </action>
+  <action name="actionToggleLogPanel">
+   <property name="text"><string>日志面板</string></property>
+   <property name="checkable"><bool>true</bool></property>
+   <property name="checked"><bool>false</bool></property>
+  </action>
+  <action name="actionBufferAnalysis">
+   <property name="text"><string>缓冲区分析</string></property>
+  </action>
+  <action name="actionOverlayAnalysis">
+   <property name="text"><string>叠加分析</string></property>
+  </action>
+  <action name="actionSpatialQuery">
+   <property name="text"><string>空间查询</string></property>
+  </action>
+  <action name="actionRasterCalc">
+   <property name="text"><string>栅格计算</string></property>
+  </action>
+  <action name="actionAIAnalyze">
+   <property name="text"><string>AI分析</string></property>
+  </action>
+  <action name="actionAISuggest">
+   <property name="text"><string>自动推荐</string></property>
+  </action>
+  <action name="actionAIChat">
+   <property name="text"><string>AI对话</string></property>
+  </action>
+  <action name="actionDoc">
+   <property name="text"><string>文档</string></property>
+  </action>
+  <action name="actionAbout">
+   <property name="text"><string>关于</string></property>
+  </action>
+
+  <!-- ═══ centralWidget：垂直堆叠 Ribbon + 地图 ═══ -->
+  <widget class="QWidget" name="centralWidget">
+   <layout class="QVBoxLayout" name="centralLayout">
+    <property name="spacing"><number>0</number></property>
+    <property name="leftMargin"><number>0</number></property>
+    <property name="topMargin"><number>0</number></property>
+    <property name="rightMargin"><number>0</number></property>
+    <property name="bottomMargin"><number>0</number></property>
+
+    <!-- ── Ribbon QTabWidget ── -->
+    <item>
+     <widget class="QTabWidget" name="tabWidgetRibbon">
+      <property name="sizePolicy">
+       <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+        <horstretch>0</horstretch><verstretch>0</verstretch>
+       </sizepolicy>
+      </property>
+      <property name="fixedHeight" stdset="0"><number>140</number></property>
+
+      <!-- ══ Tab 1：数据加载 ══ -->
+      <widget class="QWidget" name="tabData">
+       <attribute name="title"><string>数据加载</string></attribute>
+       <layout class="QHBoxLayout" name="tabDataLayout">
+        <property name="spacing"><number>4</number></property>
+        <property name="leftMargin"><number>4</number></property>
+        <property name="topMargin"><number>4</number></property>
+        <property name="rightMargin"><number>4</number></property>
+        <property name="bottomMargin"><number>4</number></property>
+
+        <!-- 分组1：文件操作 -->
+        <item>
+         <widget class="QGroupBox" name="grpDataFile">
+          <property name="title"><string/></property>
+          <layout class="QVBoxLayout" name="grpDataFileLayout">
+           <property name="spacing"><number>2</number></property>
+           <property name="leftMargin"><number>2</number></property>
+           <property name="topMargin"><number>2</number></property>
+           <property name="rightMargin"><number>2</number></property>
+           <property name="bottomMargin"><number>2</number></property>
+           <item>
+            <layout class="QHBoxLayout" name="grpDataFileBtnLayout">
+             <item>
+              <widget class="ImageButton" name="btnOpenData" native="true">
+               <property name="fixedWidth" stdset="0"><number>96</number></property>
+               <property name="fixedHeight" stdset="0"><number>96</number></property>
+              </widget>
+             </item>
+             <item>
+              <widget class="ImageButton" name="btnAddLayer" native="true">
+               <property name="fixedWidth" stdset="0"><number>96</number></property>
+               <property name="fixedHeight" stdset="0"><number>96</number></property>
+              </widget>
+             </item>
+            </layout>
+           </item>
+           <item>
+            <widget class="QLabel" name="lblDataFile">
+             <property name="text"><string>数据文件</string></property>
+             <property name="alignment"><set>Qt::AlignCenter</set></property>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+        </item>
+
+        <!-- 分组2：工程管理 -->
+        <item>
+         <widget class="QGroupBox" name="grpDataProject">
+          <property name="title"><string/></property>
+          <layout class="QVBoxLayout" name="grpDataProjectLayout">
+           <property name="spacing"><number>2</number></property>
+           <property name="leftMargin"><number>2</number></property>
+           <property name="topMargin"><number>2</number></property>
+           <property name="rightMargin"><number>2</number></property>
+           <property name="bottomMargin"><number>2</number></property>
+           <item>
+            <layout class="QHBoxLayout" name="grpDataProjectBtnLayout">
+             <item>
+              <widget class="ImageButton" name="btnSaveProject" native="true">
+               <property name="fixedWidth" stdset="0"><number>96</number></property>
+               <property name="fixedHeight" stdset="0"><number>96</number></property>
+              </widget>
+             </item>
+             <item>
+              <widget class="ImageButton" name="btnExportResult" native="true">
+               <property name="fixedWidth" stdset="0"><number>96</number></property>
+               <property name="fixedHeight" stdset="0"><number>96</number></property>
+              </widget>
+             </item>
+            </layout>
+           </item>
+           <item>
+            <widget class="QLabel" name="lblDataProject">
+             <property name="text"><string>工程管理</string></property>
+             <property name="alignment"><set>Qt::AlignCenter</set></property>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+        </item>
+
+        <item><spacer><property name="orientation"><enum>Qt::Horizontal</enum></property></spacer></item>
+       </layout>
+      </widget>
+
+      <!-- ══ Tab 2：空间分析 ══ -->
+      <widget class="QWidget" name="tabAnalysis">
+       <attribute name="title"><string>空间分析</string></attribute>
+       <layout class="QHBoxLayout" name="tabAnalysisLayout">
+        <property name="spacing"><number>4</number></property>
+        <property name="leftMargin"><number>4</number></property>
+        <property name="topMargin"><number>4</number></property>
+        <property name="rightMargin"><number>4</number></property>
+        <property name="bottomMargin"><number>4</number></property>
+
+        <!-- 分组1：矢量分析 -->
+        <item>
+         <widget class="QGroupBox" name="grpAnalysisVector">
+          <property name="title"><string/></property>
+          <layout class="QVBoxLayout" name="grpAnalysisVectorLayout">
+           <property name="spacing"><number>2</number></property>
+           <property name="leftMargin"><number>2</number></property>
+           <property name="topMargin"><number>2</number></property>
+           <property name="rightMargin"><number>2</number></property>
+           <property name="bottomMargin"><number>2</number></property>
+           <item>
+            <layout class="QHBoxLayout" name="grpAnalysisVectorBtnLayout">
+             <item>
+              <widget class="ImageButton" name="btnBufferAnalysis" native="true">
+               <property name="fixedWidth" stdset="0"><number>96</number></property>
+               <property name="fixedHeight" stdset="0"><number>96</number></property>
+              </widget>
+             </item>
+             <item>
+              <widget class="ImageButton" name="btnOverlayAnalysis" native="true">
+               <property name="fixedWidth" stdset="0"><number>96</number></property>
+               <property name="fixedHeight" stdset="0"><number>96</number></property>
+              </widget>
+             </item>
+             <item>
+              <widget class="ImageButton" name="btnSpatialQuery" native="true">
+               <property name="fixedWidth" stdset="0"><number>96</number></property>
+               <property name="fixedHeight" stdset="0"><number>96</number></property>
+              </widget>
+             </item>
+            </layout>
+           </item>
+           <item>
+            <widget class="QLabel" name="lblAnalysisVector">
+             <property name="text"><string>矢量分析</string></property>
+             <property name="alignment"><set>Qt::AlignCenter</set></property>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+        </item>
+
+        <!-- 分组2：栅格分析 -->
+        <item>
+         <widget class="QGroupBox" name="grpAnalysisRaster">
+          <property name="title"><string/></property>
+          <layout class="QVBoxLayout" name="grpAnalysisRasterLayout">
+           <property name="spacing"><number>2</number></property>
+           <property name="leftMargin"><number>2</number></property>
+           <property name="topMargin"><number>2</number></property>
+           <property name="rightMargin"><number>2</number></property>
+           <property name="bottomMargin"><number>2</number></property>
+           <item>
+            <layout class="QHBoxLayout" name="grpAnalysisRasterBtnLayout">
+             <item>
+              <widget class="ImageButton" name="btnRasterCalc" native="true">
+               <property name="fixedWidth" stdset="0"><number>96</number></property>
+               <property name="fixedHeight" stdset="0"><number>96</number></property>
+              </widget>
+             </item>
+            </layout>
+           </item>
+           <item>
+            <widget class="QLabel" name="lblAnalysisRaster">
+             <property name="text"><string>栅格分析</string></property>
+             <property name="alignment"><set>Qt::AlignCenter</set></property>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+        </item>
+
+        <item><spacer><property name="orientation"><enum>Qt::Horizontal</enum></property></spacer></item>
+       </layout>
+      </widget>
+
+      <!-- ══ Tab 3：AI工具 ══ -->
+      <widget class="QWidget" name="tabAI">
+       <attribute name="title"><string>AI工具</string></attribute>
+       <layout class="QHBoxLayout" name="tabAILayout">
+        <property name="spacing"><number>4</number></property>
+        <property name="leftMargin"><number>4</number></property>
+        <property name="topMargin"><number>4</number></property>
+        <property name="rightMargin"><number>4</number></property>
+        <property name="bottomMargin"><number>4</number></property>
+
+        <!-- 分组：AI功能 -->
+        <item>
+         <widget class="QGroupBox" name="grpAITools">
+          <property name="title"><string/></property>
+          <layout class="QVBoxLayout" name="grpAIToolsLayout">
+           <property name="spacing"><number>2</number></property>
+           <property name="leftMargin"><number>2</number></property>
+           <property name="topMargin"><number>2</number></property>
+           <property name="rightMargin"><number>2</number></property>
+           <property name="bottomMargin"><number>2</number></property>
+           <item>
+            <layout class="QHBoxLayout" name="grpAIToolsBtnLayout">
+             <item>
+              <widget class="ImageButton" name="btnAIAnalyze" native="true">
+               <property name="fixedWidth" stdset="0"><number>96</number></property>
+               <property name="fixedHeight" stdset="0"><number>96</number></property>
+              </widget>
+             </item>
+             <item>
+              <widget class="ImageButton" name="btnAIChat" native="true">
+               <property name="fixedWidth" stdset="0"><number>96</number></property>
+               <property name="fixedHeight" stdset="0"><number>96</number></property>
+              </widget>
+             </item>
+            </layout>
+           </item>
+           <item>
+            <widget class="QLabel" name="lblAITools">
+             <property name="text"><string>AI功能</string></property>
+             <property name="alignment"><set>Qt::AlignCenter</set></property>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+        </item>
+
+        <item><spacer><property name="orientation"><enum>Qt::Horizontal</enum></property></spacer></item>
+       </layout>
+      </widget>
+
+     </widget>
+    </item>
+
+    <!-- ── 地图显示区（MapCanvas 占位） ── -->
+    <item>
+     <widget class="QWidget" name="wgtMapCanvas">
+      <property name="sizePolicy">
+       <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+        <horstretch>1</horstretch><verstretch>1</verstretch>
+       </sizepolicy>
+      </property>
+      <property name="styleSheet">
+       <string>background-color:rgb(162, 166, 181);</string>
+      </property>
+     </widget>
+    </item>
+
+   </layout>
+  </widget>
+
+  <!-- ═══ 菜单栏 ═══ -->
+  <widget class="QMenuBar" name="menuBar">
+   <property name="geometry">
+    <rect><x>0</x><y>0</y><width>1400</width><height>28</height></rect>
+   </property>
+   <widget class="QMenu" name="menuFile">
+    <property name="title"><string>文件(&amp;F)</string></property>
+    <addaction name="actionOpenData"/>
+    <addaction name="actionAddLayer"/>
+    <addaction name="separator"/>
+    <addaction name="actionSaveProject"/>
+    <addaction name="actionExportResult"/>
+    <addaction name="separator"/>
+    <addaction name="actionExit"/>
+   </widget>
+   <widget class="QMenu" name="menuEdit">
+    <property name="title"><string>编辑(&amp;E)</string></property>
+    <addaction name="actionUndo"/>
+    <addaction name="actionRedo"/>
+   </widget>
+   <widget class="QMenu" name="menuView">
+    <property name="title"><string>视图(&amp;V)</string></property>
+    <addaction name="actionZoomIn"/>
+    <addaction name="actionZoomOut"/>
+    <addaction name="actionFitView"/>
+    <addaction name="separator"/>
+    <addaction name="actionToggleLayerPanel"/>
+    <addaction name="actionToggleAIPanel"/>
+    <addaction name="actionToggleAttrPanel"/>
+    <addaction name="actionToggleAnalysisPanel"/>
+    <addaction name="actionToggleLogPanel"/>
+   </widget>
+   <widget class="QMenu" name="menuAnalysis">
+    <property name="title"><string>分析(&amp;A)</string></property>
+    <addaction name="actionBufferAnalysis"/>
+    <addaction name="actionOverlayAnalysis"/>
+    <addaction name="actionSpatialQuery"/>
+    <addaction name="actionRasterCalc"/>
+   </widget>
+   <widget class="QMenu" name="menuAI">
+    <property name="title"><string>AI(&amp;I)</string></property>
+    <addaction name="actionAIAnalyze"/>
+    <addaction name="actionAISuggest"/>
+    <addaction name="actionAIChat"/>
+   </widget>
+   <widget class="QMenu" name="menuHelp">
+    <property name="title"><string>帮助(&amp;H)</string></property>
+    <addaction name="actionDoc"/>
+    <addaction name="actionAbout"/>
+   </widget>
+   <addaction name="menuFile"/>
+   <addaction name="menuEdit"/>
+   <addaction name="menuView"/>
+   <addaction name="menuAnalysis"/>
+   <addaction name="menuAI"/>
+   <addaction name="menuHelp"/>
+  </widget>
+
+  <!-- ═══ 状态栏 ═══ -->
+  <widget class="QStatusBar" name="statusBar"/>
+
+ </widget>
+
+ <customwidgets>
+  <customwidget>
+   <class>ImageButton</class>
+   <extends>QWidget</extends>
+   <header>ui/style/imagebutton.h</header>
+  </customwidget>
+ </customwidgets>
+
+ <resources/>
+ <connections/>
+</ui>

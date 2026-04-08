@@ -1,0 +1,49 @@
+CMakeLists.txt                         # CMake 构建入口，注册 Qt/QGIS 依赖与源码文件
+rules.txt                              # 项目代码规范、命名规则与分层要求
+
+resources/
+├── icons/                             # Ribbon、菜单与 AI 面板使用的图标资源
+└── mainwindow.ui                      # Qt Designer 生成的主窗口 UI 布局文件
+
+sample_data/
+├── sample_table.csv                   # 4x4 CSV 数值测试数据，适合验证基础统计与频率统计
+├── sample_raster.asc                  # 5x5 简单栅格测试数据，适合验证邻域分析
+└── README.txt                         # 测试数据说明与预期结果
+
+src/
+├── main.cpp                           # 程序入口，启动 Qt 应用与主窗口
+│
+├── model/                             # 纯数据结构层，不含业务逻辑
+│   ├── layerinfo.h                    # 图层信息 DTO
+│   ├── chatmessage.h                  # AI 对话消息 DTO
+│   ├── analysisresult.h               # 分析结果 DTO
+│   ├── maptooltype.h                  # 地图交互工具类型枚举
+│   ├── numericdataset.h               # 数值型数据集 DTO（CSV/简单栅格分析输入）
+│   ├── aimodule.h/cpp                 # 旧版 AI 模块（保留）
+│   ├── analysismodule.h/cpp           # 旧版分析模块（保留）
+│   └── datamodule.h/cpp               # 旧版数据模块（保留）
+│
+├── core/                              # 基础核心层，负责 AI 编排与基础设施
+│   ├── aimanager.h/cpp                # AI 对话流程总协调层
+│   ├── conversationcontext.h/cpp      # Claude Code 风格对话上下文与记忆注入管理
+│   ├── ollamaclient.h/cpp             # 与 Ollama 的 HTTP 流式通信层
+│   ├── toolcalldispatcher.h/cpp       # AI 工具调用编排与分发层
+│   ├── qgsappinitializer.h/cpp        # QGIS 应用初始化/释放管理
+│   └── memory/
+│       ├── systemcontextbuilder.h/cpp # AI system prompt 构建器
+│       └── memoryfilemanager.h/cpp    # CLAUDE.md / memory/*.md 记忆文件管理
+│
+├── service/                           # 业务逻辑层，负责数据读取与分析算法
+│   ├── dataservice.h/cpp              # 数据加载入口，分发 CSV/简单栅格/GIS 文件解析
+│   ├── numericdatareader.h/cpp        # 数值数据读取器，负责 CSV 与简单栅格文本解析
+│   └── analysisservice.h/cpp          # 数据分析引擎，提供基础统计、频率统计、邻域分析
+│
+└── ui/                                # 表现层，只负责交互与结果展示
+    ├── mainwindow.h/cpp               # 主窗口，组织数据加载、分析面板与结果展示
+    ├── docks/
+    │   └── aidockwidget.h/cpp         # Claude Code CLI 风格 AI 终端 Dock
+    ├── style/
+    │   └── imagebutton.h/cpp          # 自定义图像按钮控件
+    └── widgets/
+        ├── mapcanvaswidget.h/cpp      # 单个地图画布封装
+        └── mapcanvasmanager.h/cpp     # 多画布管理器
