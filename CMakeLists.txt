@@ -1,4 +1,30 @@
 cmake_minimum_required(VERSION 3.20)
+
+# 以下第三方库当前未随仓库一起管理，因此这些路径仍需要开发者在本机配置为绝对路径。
+# 为了支持多人协作，这里只保留少量根目录变量，避免在源码中硬编码多处机器相关路径。
+set(OSGEO4W_ROOT "" CACHE PATH "OSGeo4W 安装根目录，例如 D:/path/to/OSGeo4W")
+set(LOG4CPP_ROOT "" CACHE PATH "log4cpp 安装根目录，例如 D:/path/to/log4cpp-1.1.4")
+set(LIBXML2_ROOT "" CACHE PATH "libxml2 安装根目录，例如 D:/path/to/libxml2")
+
+foreach(_required_root IN ITEMS OSGEO4W_ROOT LOG4CPP_ROOT LIBXML2_ROOT)
+    if(NOT DEFINED ${_required_root} OR "${${_required_root}}" STREQUAL "")
+        message(FATAL_ERROR
+            "${_required_root} 未设置。请在首次配置 CMake 时填写本机第三方库的绝对路径，详见 Dev_manual.md。"
+        )
+    endif()
+endforeach()
+
+set(OSGEO4W_QT5_ROOT "${OSGEO4W_ROOT}/apps/Qt5")
+set(OSGEO4W_GDAL_ROOT "${OSGEO4W_ROOT}/apps/gdal-dev")
+set(OSGEO4W_QGIS_ROOT "${OSGEO4W_ROOT}/apps/qgis-ltr")
+set(LOG4CPP_INCLUDE_DIR "${LOG4CPP_ROOT}/include")
+set(LOG4CPP_DEBUG_LIB_DIR "${LOG4CPP_ROOT}/debug")
+set(LOG4CPP_RELEASE_LIB_DIR "${LOG4CPP_ROOT}/release")
+set(LIBXML2_INCLUDE_DIR "${LIBXML2_ROOT}/include")
+set(LIBXML2_LIB_DIR "${LIBXML2_ROOT}/lib")
+
+list(PREPEND CMAKE_PREFIX_PATH "${OSGEO4W_QT5_ROOT}")
+
 project(FirstQT LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -10,9 +36,6 @@ set(CMAKE_AUTOUIC_SEARCH_PATHS
     ${CMAKE_SOURCE_DIR}/resources
     ${CMAKE_SOURCE_DIR}/src/ui/style
 )
-
-# ── Qt5 路径（保持和之前一致）──────────────────────────────
-set(CMAKE_PREFIX_PATH "D:/OSGeo4W/apps/Qt5")
 
 find_package(Qt5 REQUIRED COMPONENTS Core Gui Widgets Network Xml Svg Sql PrintSupport)
 
@@ -69,19 +92,19 @@ target_include_directories(FirstQT PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core
     ${CMAKE_CURRENT_SOURCE_DIR}/src/service
     ${CMAKE_CURRENT_SOURCE_DIR}/resources
-    D:/OSGeo4W/apps/gdal-dev/include
-    D:/OSGeo4W/apps/qgis-ltr/include
-    D:/OOP_2026/log4cpp-1.1.4/include
-    D:/OOP_2026/libxml2/include
+    ${OSGEO4W_GDAL_ROOT}/include
+    ${OSGEO4W_QGIS_ROOT}/include
+    ${LOG4CPP_INCLUDE_DIR}
+    ${LIBXML2_INCLUDE_DIR}
 )
 
 target_link_directories(FirstQT PRIVATE
-    D:/OSGeo4W/apps/gdal-dev/lib
-    D:/OSGeo4W/apps/qgis-ltr/lib
-    D:/OOP_2026/libxml2/lib
-    D:/OSGeo4W/apps/Qt5/lib
-    $<$<CONFIG:Debug>:D:/OOP_2026/log4cpp-1.1.4/debug>
-    $<$<CONFIG:Release>:D:/OOP_2026/log4cpp-1.1.4/release>
+    ${OSGEO4W_GDAL_ROOT}/lib
+    ${OSGEO4W_QGIS_ROOT}/lib
+    ${LIBXML2_LIB_DIR}
+    ${OSGEO4W_QT5_ROOT}/lib
+    $<$<CONFIG:Debug>:${LOG4CPP_DEBUG_LIB_DIR}>
+    $<$<CONFIG:Release>:${LOG4CPP_RELEASE_LIB_DIR}>
 )
 
 target_link_libraries(FirstQT PRIVATE
