@@ -1,5 +1,5 @@
 #include <qgsapplication.h>
-#include "core/qgsappinitializer.h"
+#include "core/integration/qgsappinitializer.h"
 #include "ui/mainwindow.h"
 
 int main(int argc, char* argv[])

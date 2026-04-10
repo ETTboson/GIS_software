@@ -1,4 +1,3 @@
-// src/ui/docks/aidockwidget.h
 #ifndef AIDOCKWIDGET_H_F6A1B2C3D4E5
 #define AIDOCKWIDGET_H_F6A1B2C3D4E5
 
@@ -11,16 +10,22 @@ class QLineEdit;
 class QLabel;
 class QPushButton;
 class QEvent;
-class QKeyEvent;
 class AIManager;
 
+// ════════════════════════════════════════════════════════
+//  AIDockWidget
+//  职责：提供终端式 AI 交互面板。
+//        负责输入输出、流式文本渲染、工具生命周期显示，以及
+//        对内部 tool_call 残片做清洗，保持参考程序的纯文本终端体验。
+//  位于 ui/docks/ 层，只与 AIManager 通过信号槽通信。
+// ════════════════════════════════════════════════════════
 class AIDockWidget : public QDockWidget
 {
     Q_OBJECT
 
 public:
     /*
-     * @brief 构造函数，初始化 Claude Code CLI 风格终端界面
+     * @brief 构造函数，初始化终端式 AI 面板
      * @param_1 _pParent: 父对象指针
      */
     explicit AIDockWidget(QWidget* _pParent = nullptr);
@@ -39,11 +44,6 @@ public:
     void focusInput();
 
 protected:
-    /*
-     * @brief 监听输入框快捷键
-     * @param_1 _pObj: 事件目标对象
-     * @param_2 _pEvent: 事件对象
-     */
     bool eventFilter(QObject* _pObj, QEvent* _pEvent) override;
 
 private slots:
@@ -58,89 +58,49 @@ private slots:
     void onStopClicked();
 
 private:
-    /*
-     * @brief 初始化终端风格界面
-     */
+    enum class PromptKind
+    {
+        Normal,
+        Choice,
+        Form
+    };
+
     void initUI();
-
-    /*
-     * @brief 连接内部控件信号
-     */
     void initConnections();
-
-    /*
-     * @brief 打印终端 banner
-     */
     void printBanner();
-
-    /*
-     * @brief 追加一行带样式的输出
-     * @param_1 _strText: 行文本
-     * @param_2 _color: 文本颜色
-     * @param_3 _bBold: 是否粗体
-     * @param_4 _strPrefix: 行前缀
-     */
     void appendLine(const QString& _strText,
         const QColor& _color,
         bool _bBold = false,
         const QString& _strPrefix = QString());
-
-    /*
-     * @brief 开启新的 AI 输出块
-     */
     void beginAiBlock();
-
-    /*
-     * @brief 向当前 AI 输出块追加 chunk
-     * @param_1 _strChunk: 流式文本片段
-     */
     void appendChunk(const QString& _strChunk);
-
-    /*
-     * @brief 结束 AI 输出块
-     */
+    void renderCurrentAiBlock();
+    void replaceCurrentAiBlock(const QString& _strPlainText,
+        PromptKind _kind);
+    QString normalizeRawAssistantText(const QString& _strRawText) const;
+    PromptKind detectPromptKind(const QString& _strPlainText) const;
     void endAiBlock();
-
-    /*
-     * @brief 滚动到输出区底部
-     */
     void scrollToBottom();
-
-    /*
-     * @brief 历史输入向上浏览
-     */
     void historyUp();
-
-    /*
-     * @brief 历史输入向下浏览
-     */
     void historyDown();
-
-    /*
-     * @brief 记录一条输入历史
-     * @param_1 _strCmd: 用户输入文本
-     */
     void pushHistory(const QString& _strCmd);
-
-    /*
-     * @brief 更新顶部状态栏文本与颜色
-     * @param_1 _strText: 状态文本
-     * @param_2 _color: 状态颜色
-     */
     void setStatus(const QString& _strText, const QColor& _color);
 
-    AIManager*    mpAIManager;
-    QLabel*       mpctrlStatusBar;
-    QTextEdit*    mpctrlOutput;
-    QLineEdit*    mpctrlInput;
-    QPushButton*  mpctrlBtnSend;
-    QPushButton*  mpctrlBtnClear;
-    QPushButton*  mpctrlBtnStop;
-    bool          mbStreaming;
-    bool          mbAiBlockOpen;
-    QStringList   mvHistory;
-    int           mnHistoryIdx;
-    QString       mstrInputBackup;
+    AIManager*   mpAIManager; // AI 对话管理器
+    QLabel*      mpctrlStatusBar; // 顶部状态栏
+    QTextEdit*   mpctrlOutput; // 输出区
+    QLineEdit*   mpctrlInput; // 输入框
+    QPushButton* mpctrlBtnSend; // 发送按钮
+    QPushButton* mpctrlBtnClear; // 清屏按钮
+    QPushButton* mpctrlBtnStop; // 中断按钮
+    bool         mbStreaming; // 是否正在流式回复
+    bool         mbAiBlockOpen; // 是否已有未结束 AI 块
+    QString      mstrRawAssistantBuffer; // 原始助手缓冲
+    int          mnAiContentStart; // AI 块起始位置
+    int          mnAiContentEnd; // AI 块结束位置
+    QStringList  mvHistory; // 历史输入
+    int          mnHistoryIdx; // 当前历史索引
+    QString      mstrInputBackup; // 历史导航时的输入备份
 
     static const QColor S_C_BG;
     static const QColor S_C_USER;

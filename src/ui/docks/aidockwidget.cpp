@@ -1,6 +1,6 @@
-// src/ui/docks/aidockwidget.cpp
 #include "aidockwidget.h"
-#include "core/aimanager.h"
+
+#include "core/ai/aimanager.h"
 
 #include <QDateTime>
 #include <QEvent>
@@ -10,12 +10,39 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QScrollBar>
+#include <QSet>
 #include <QTextBlockFormat>
 #include <QTextCharFormat>
 #include <QTextCursor>
 #include <QTextEdit>
 #include <QVBoxLayout>
+
+namespace
+{
+
+bool isInternalPlanningTool(const QString& _strToolName)
+{
+    static const QSet<QString> S_SET_INTERNAL_TOOLS = {
+        "set_analysis_params",
+        "cancel_analysis",
+        "get_analysis_context",
+        "search_memory"
+    };
+    return S_SET_INTERNAL_TOOLS.contains(_strToolName);
+}
+
+bool isRawToolCallJsonLine(const QString& _strLine)
+{
+    const QString _strTrimmed = _strLine.trimmed();
+    return _strTrimmed.startsWith('{')
+        && _strTrimmed.endsWith('}')
+        && _strTrimmed.contains("\"name\"")
+        && _strTrimmed.contains("\"arguments\"");
+}
+
+} // namespace
 
 const QColor AIDockWidget::S_C_BG("#1E1E1E");
 const QColor AIDockWidget::S_C_USER("#4EC9B0");
@@ -37,6 +64,8 @@ AIDockWidget::AIDockWidget(QWidget* _pParent)
     , mpctrlBtnStop(nullptr)
     , mbStreaming(false)
     , mbAiBlockOpen(false)
+    , mnAiContentStart(-1)
+    , mnAiContentEnd(-1)
     , mnHistoryIdx(-1)
 {
     setObjectName("dockAI");
@@ -203,10 +232,11 @@ void AIDockWidget::initConnections()
 void AIDockWidget::printBanner()
 {
     appendLine(QString(58, '-'), S_C_DIM);
-    appendLine("  CLAUDE CODE STYLE GIS TERMINAL", S_C_ACCENT, true);
+    appendLine("  GIS AI TERMINAL", S_C_ACCENT, true);
     appendLine(QString("  模型: qwen2.5:7b    后端: Ollama    %1")
-        .arg(QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm")), S_C_SYSTEM);
-    appendLine("  支持多轮上下文、工具调用、CLAUDE.md 记忆注入。", S_C_DIM);
+        .arg(QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm")),
+        S_C_SYSTEM);
+    appendLine("  支持多轮上下文、工具调用、ET.md 记忆注入。", S_C_DIM);
     appendLine(QString(58, '-'), S_C_DIM);
     QTextCursor _cursor = mpctrlOutput->textCursor();
     _cursor.movePosition(QTextCursor::End);
@@ -215,7 +245,9 @@ void AIDockWidget::printBanner()
 }
 
 void AIDockWidget::appendLine(const QString& _strText,
-    const QColor& _color, bool _bBold, const QString& _strPrefix)
+    const QColor& _color,
+    bool _bBold,
+    const QString& _strPrefix)
 {
     QTextCursor _cursor = mpctrlOutput->textCursor();
     _cursor.movePosition(QTextCursor::End);
@@ -258,18 +290,17 @@ void AIDockWidget::beginAiBlock()
     _blkFmt.setTopMargin(4);
     _cursor.insertBlock(_blkFmt);
 
-    QTextCharFormat _prefixFmt;
-    _prefixFmt.setForeground(S_C_ACCENT);
     QFont _monoFont("Consolas", 10);
     _monoFont.setFixedPitch(true);
-    _prefixFmt.setFont(_monoFont);
-    _cursor.insertText("* ", _prefixFmt);
 
     QTextCharFormat _bodyFmt;
     _bodyFmt.setForeground(S_C_AI);
     _bodyFmt.setFont(_monoFont);
     _cursor.setCharFormat(_bodyFmt);
 
+    mstrRawAssistantBuffer.clear();
+    mnAiContentStart = _cursor.position();
+    mnAiContentEnd = mnAiContentStart;
     mpctrlOutput->setTextCursor(_cursor);
     mbAiBlockOpen = true;
     scrollToBottom();
@@ -277,22 +308,127 @@ void AIDockWidget::beginAiBlock()
 
 void AIDockWidget::appendChunk(const QString& _strChunk)
 {
+    Q_UNUSED(_strChunk)
     if (!mbAiBlockOpen) {
         beginAiBlock();
     }
+    renderCurrentAiBlock();
+}
 
-    QTextCursor _cursor = mpctrlOutput->textCursor();
-    _cursor.movePosition(QTextCursor::End);
+void AIDockWidget::renderCurrentAiBlock()
+{
+    if (!mbAiBlockOpen || mnAiContentStart < 0) {
+        return;
+    }
 
-    QTextCharFormat _fmt;
-    _fmt.setForeground(S_C_AI);
+    const QString _strPlainText = normalizeRawAssistantText(mstrRawAssistantBuffer);
+    replaceCurrentAiBlock(_strPlainText, detectPromptKind(_strPlainText));
+}
+
+void AIDockWidget::replaceCurrentAiBlock(const QString& _strPlainText,
+    PromptKind _kind)
+{
+    QTextCursor _cursor(mpctrlOutput->document());
+    _cursor.setPosition(mnAiContentStart);
+    _cursor.setPosition(mnAiContentEnd, QTextCursor::KeepAnchor);
+    _cursor.removeSelectedText();
+
     QFont _monoFont("Consolas", 10);
     _monoFont.setFixedPitch(true);
-    _fmt.setFont(_monoFont);
 
-    _cursor.insertText(_strChunk, _fmt);
+    auto _makeFormat = [&](const QColor& _color, bool _bBold) {
+        QTextCharFormat _fmt;
+        _fmt.setForeground(_color);
+        _fmt.setFont(_monoFont);
+        _fmt.setFontWeight(_bBold ? QFont::Bold : QFont::Normal);
+        return _fmt;
+    };
+
+    const QStringList _vLines = _strPlainText.split('\n');
+    for (int _nLineIdx = 0; _nLineIdx < _vLines.size(); ++_nLineIdx) {
+        if (_nLineIdx > 0) {
+            _cursor.insertText("\n", _makeFormat(S_C_AI, false));
+        }
+
+        QTextCharFormat _fmt = _makeFormat(S_C_AI, false);
+        if (_kind != PromptKind::Normal && _nLineIdx == 0
+            && !_vLines[_nLineIdx].trimmed().isEmpty()) {
+            _fmt = _makeFormat(S_C_SYSTEM, true);
+        }
+
+        _cursor.insertText(_vLines[_nLineIdx], _fmt);
+    }
+
+    mnAiContentEnd = _cursor.position();
     mpctrlOutput->setTextCursor(_cursor);
     scrollToBottom();
+}
+
+QString AIDockWidget::normalizeRawAssistantText(const QString& _strRawText) const
+{
+    QString _strText = _strRawText;
+    _strText.replace("\r\n", "\n");
+    _strText.replace('\r', '\n');
+
+    QStringList _vNormalizedLines;
+    const QStringList _vRawLines = _strText.split('\n');
+    for (QString _strLine : _vRawLines) {
+        if (_strLine.contains("<tool_call>") || _strLine.contains("</tool_call>")) {
+            continue;
+        }
+        if (isRawToolCallJsonLine(_strLine)) {
+            continue;
+        }
+        _strLine.remove(QRegularExpression(R"(^\s*```.*$)"));
+        _strLine.remove('`');
+        _strLine.replace("**", "");
+        _strLine.replace("__", "");
+        _strLine.replace(QRegularExpression(R"(^\s*#{1,6}\s*)"), "");
+        _strLine.replace(QRegularExpression(R"(^\s*[-*]\s+)"), "");
+        _strLine.replace(QRegularExpression(R"(^\s*>\s*)"), "");
+        _strLine.remove(QRegularExpression(R"(\s+$)"));
+        _vNormalizedLines << _strLine;
+    }
+
+    QStringList _vCompactedLines;
+    bool _bLastWasBlank = false;
+    for (const QString& _strLine : _vNormalizedLines) {
+        const bool _bBlank = _strLine.trimmed().isEmpty();
+        if (_bBlank) {
+            if (!_bLastWasBlank) {
+                _vCompactedLines << QString();
+            }
+            _bLastWasBlank = true;
+            continue;
+        }
+
+        _vCompactedLines << _strLine;
+        _bLastWasBlank = false;
+    }
+
+    while (!_vCompactedLines.isEmpty()
+        && _vCompactedLines.first().trimmed().isEmpty()) {
+        _vCompactedLines.removeFirst();
+    }
+    while (!_vCompactedLines.isEmpty()
+        && _vCompactedLines.last().trimmed().isEmpty()) {
+        _vCompactedLines.removeLast();
+    }
+
+    return _vCompactedLines.join('\n').trimmed();
+}
+
+AIDockWidget::PromptKind AIDockWidget::detectPromptKind(
+    const QString& _strPlainText) const
+{
+    const QString _strSimplified = _strPlainText.trimmed();
+    if (_strSimplified.startsWith(QString::fromUtf8("请选择一个选项"))) {
+        return PromptKind::Choice;
+    }
+    if (_strSimplified.startsWith(QString::fromUtf8("还需要这些信息"))) {
+        return PromptKind::Form;
+    }
+    return PromptKind::Normal;
 }
 
 void AIDockWidget::endAiBlock()
@@ -319,6 +455,9 @@ void AIDockWidget::endAiBlock()
 
     mpctrlOutput->setTextCursor(_cursor);
     mbAiBlockOpen = false;
+    mstrRawAssistantBuffer.clear();
+    mnAiContentStart = -1;
+    mnAiContentEnd = -1;
     scrollToBottom();
 }
 
@@ -408,11 +547,13 @@ void AIDockWidget::onSendClicked()
 
 void AIDockWidget::onChunkReceived(const QString& _strChunk)
 {
+    mstrRawAssistantBuffer += _strChunk;
     appendChunk(_strChunk);
 }
 
 void AIDockWidget::onReplyFinished()
 {
+    renderCurrentAiBlock();
     endAiBlock();
     mbStreaming = false;
     mpctrlBtnSend->setEnabled(true);
@@ -433,21 +574,46 @@ void AIDockWidget::onErrorOccurred(const QString& _strError)
 
 void AIDockWidget::onToolCallStarted(const QString& _strToolName)
 {
-    endAiBlock();
+    if (mbAiBlockOpen) {
+        const bool _bHasVisibleText =
+            !normalizeRawAssistantText(mstrRawAssistantBuffer).trimmed().isEmpty();
+        if (_bHasVisibleText) {
+            endAiBlock();
+        } else {
+            mbAiBlockOpen = false;
+            mstrRawAssistantBuffer.clear();
+            mnAiContentStart = -1;
+            mnAiContentEnd = -1;
+        }
+    }
+
+    setStatus(tr("● Ollama  ·  执行中..."), S_C_TOOL);
+    if (isInternalPlanningTool(_strToolName)) {
+        return;
+    }
+
     appendLine(tr("正在执行工具: %1").arg(_strToolName), S_C_TOOL, false, ">> ");
 }
 
 void AIDockWidget::onToolCallFinished(const QString& _strToolName,
     const QString& _strResult)
 {
-    appendLine(tr("%1: %2").arg(_strToolName, _strResult),
-        S_C_SYSTEM, false, "<< ");
-    beginAiBlock();
+    if (isInternalPlanningTool(_strToolName)) {
+        return;
+    }
+
+    const QString _strPlainText = normalizeRawAssistantText(_strResult);
+    if (!_strPlainText.isEmpty()) {
+        appendLine(_strPlainText, S_C_SYSTEM, false, "<< ");
+    }
 }
 
 void AIDockWidget::onClearClicked()
 {
     mpctrlOutput->clear();
+    mstrRawAssistantBuffer.clear();
+    mnAiContentStart = -1;
+    mnAiContentEnd = -1;
     printBanner();
     mbStreaming = false;
     mbAiBlockOpen = false;

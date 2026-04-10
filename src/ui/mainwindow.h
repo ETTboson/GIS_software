@@ -4,15 +4,17 @@
 #include <QMainWindow>
 #include <QLabel>
 #include <QDockWidget>
+#include <QJsonObject>
 #include <QTreeWidget>
 #include <QTextEdit>
 #include <QTableView>
 
 #include <qgslayertreeview.h>
 
-#include "model/layerinfo.h"
-#include "model/analysisresult.h"
-#include "model/maptooltype.h"
+#include "model/dto/layerinfo.h"
+#include "model/dto/analysisresult.h"
+#include "model/enums/maptooltype.h"
+#include "core/interfaces/iaitoolhost.h"
 
 class DataService;
 class AnalysisService;
@@ -29,7 +31,14 @@ QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
 
-class MainWindow : public QMainWindow
+// ════════════════════════════════════════════════════════
+//  MainWindow
+//  职责：应用主窗口与 UI 总装配层。
+//        负责组织 Ribbon、地图区域、Dock 面板以及 service/core 模块，
+//        同时作为 IAIToolHost 把当前程序的分析能力桥接给 AI 模块。
+//  位于 ui/ 根层，只负责交互编排与展示，不直接承载算法实现。
+// ════════════════════════════════════════════════════════
+class MainWindow : public QMainWindow, public IAIToolHost
 {
     Q_OBJECT
 
@@ -44,6 +53,23 @@ public:
      * @brief 析构函数，释放模块与 UI 对象
      */
     ~MainWindow();
+
+    /*
+     * @brief 返回当前分析上下文快照
+     */
+    QJsonObject getAnalysisContext() const override;
+
+    /*
+     * @brief 执行 AI 分析工具
+     * @param_1 _strToolName: 工具名称
+     * @param_2 _jsonArgs: 工具参数
+     * @param_3 _strResult: 成功时结果文本
+     * @param_4 _strError: 失败时错误文本
+     */
+    bool executeAnalysisTool(const QString& _strToolName,
+        const QJsonObject& _jsonArgs,
+        QString& _strResult,
+        QString& _strError) override;
 
 private:
     void initModules();

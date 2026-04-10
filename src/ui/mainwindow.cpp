@@ -1,16 +1,18 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
-#include "ui/style/imagebutton.h"
+#include "ui/components/imagebutton.h"
 #include "ui/docks/aidockwidget.h"
-#include "ui/widgets/mapcanvaswidget.h"
-#include "ui/widgets/mapcanvasmanager.h"
-#include "service/dataservice.h"
-#include "service/analysisservice.h"
-#include "core/aimanager.h"
+#include "ui/map/mapcanvaswidget.h"
+#include "ui/map/mapcanvasmanager.h"
+#include "service/data/dataservice.h"
+#include "service/analysis/analysisservice.h"
+#include "core/ai/aimanager.h"
 
 #include <QComboBox>
 #include <QFileDialog>
 #include <QHBoxLayout>
+#include <QJsonArray>
+#include <QJsonObject>
 #include <QLabel>
 #include <QMessageBox>
 #include <QPushButton>
@@ -86,7 +88,7 @@ void MainWindow::initModules()
     mpAIManager = new AIManager(this);
     mpMapCanvasManager = new MapCanvasManager(this);
 
-    mpAIManager->setAnalysisService(mpAnalysisService);
+    mpAIManager->setToolHost(this);
 
     MapCanvasWidget* _pCanvas = mpMapCanvasManager->createCanvas(mpUI->wgtMapCanvas);
 
@@ -95,6 +97,64 @@ void MainWindow::initModules()
     _pLayout->setSpacing(0);
     _pLayout->addWidget(_pCanvas);
     mpUI->wgtMapCanvas->setLayout(_pLayout);
+}
+
+QJsonObject MainWindow::getAnalysisContext() const
+{
+    QJsonObject _jsonContext;
+    _jsonContext["has_numeric_data"] = (mpAnalysisService != nullptr)
+        ? mpAnalysisService->hasReadyNumericData()
+        : false;
+    _jsonContext["ready_data_path"] = (mpAnalysisService != nullptr)
+        ? mpAnalysisService->readyDataPath()
+        : QString();
+
+    if (mpAnalysisService != nullptr && mpAnalysisService->hasReadyNumericData()) {
+        const NumericDataset _dataSet = mpAnalysisService->currentDataSet();
+        _jsonContext["dataset_name"] = _dataSet.strName;
+        _jsonContext["dataset_format"] = _dataSet.strFormat;
+        _jsonContext["dataset_rows"] = _dataSet.nRows;
+        _jsonContext["dataset_cols"] = _dataSet.nCols;
+    }
+
+    QJsonArray _jsonLayers;
+    if (mpDataService != nullptr) {
+        const QList<LayerInfo> _vLayers = mpDataService->getLayers();
+        for (const LayerInfo& _layerInfo : _vLayers) {
+            QJsonObject _jsonLayer;
+            _jsonLayer["name"] = _layerInfo.strName;
+            _jsonLayer["type"] = _layerInfo.strType;
+            _jsonLayer["file_path"] = _layerInfo.strFilePath;
+            _jsonLayer["visible"] = _layerInfo.bVisible;
+            _jsonLayers.append(_jsonLayer);
+        }
+    }
+    _jsonContext["layers"] = _jsonLayers;
+    return _jsonContext;
+}
+
+bool MainWindow::executeAnalysisTool(const QString& _strToolName,
+    const QJsonObject& _jsonArgs,
+    QString& _strResult,
+    QString& _strError)
+{
+    _strResult.clear();
+    _strError.clear();
+
+    if (mpAnalysisService == nullptr) {
+        _strError = tr("AnalysisService 未初始化");
+        return false;
+    }
+
+    const AnalysisResult _result = mpAnalysisService->executeToolCall(
+        _strToolName, _jsonArgs);
+    if (_result.bSuccess) {
+        _strResult = _result.strDesc;
+        return true;
+    }
+
+    _strError = _result.strDesc;
+    return false;
 }
 
 void MainWindow::initRibbonButtons()

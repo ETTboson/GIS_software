@@ -34,7 +34,7 @@ set(CMAKE_AUTORCC ON)
 
 set(CMAKE_AUTOUIC_SEARCH_PATHS
     ${CMAKE_SOURCE_DIR}/resources
-    ${CMAKE_SOURCE_DIR}/src/ui/style
+    ${CMAKE_SOURCE_DIR}/src/ui/components
 )
 
 find_package(Qt5 REQUIRED COMPONENTS Core Gui Widgets Network Xml Svg Sql PrintSupport)
@@ -43,54 +43,57 @@ add_executable(FirstQT
     src/main.cpp
     resources/mainwindow.ui
 
-    src/core/aimanager.cpp
-    src/core/aimanager.h
-    src/core/conversationcontext.cpp
-    src/core/conversationcontext.h
-    src/core/memory/systemcontextbuilder.cpp
-    src/core/memory/systemcontextbuilder.h
-    src/core/memory/memoryfilemanager.cpp
-    src/core/memory/memoryfilemanager.h
-    src/core/ollamaclient.cpp
-    src/core/ollamaclient.h
-    src/core/toolcalldispatcher.cpp
-    src/core/toolcalldispatcher.h
-    src/core/qgsappinitializer.cpp
-    src/core/qgsappinitializer.h
+    src/core/ai/aimanager.cpp
+    src/core/ai/aimanager.h
+    src/core/ai/conversationcontext.cpp
+    src/core/ai/conversationcontext.h
+    src/core/ai/ollamaclient.cpp
+    src/core/ai/ollamaclient.h
+    src/core/ai/toolcalldispatcher.cpp
+    src/core/ai/toolcalldispatcher.h
+    src/core/ai/memory/systemcontextbuilder.cpp
+    src/core/ai/memory/systemcontextbuilder.h
+    src/core/ai/memory/memoryfilemanager.cpp
+    src/core/ai/memory/memoryfilemanager.h
+    src/core/workflow/analysisworkflowcoordinator.cpp
+    src/core/workflow/analysisworkflowcoordinator.h
+    src/core/integration/qgsappinitializer.cpp
+    src/core/integration/qgsappinitializer.h
+    src/core/interfaces/iaitoolhost.h
 
-    src/model/analysisresult.h
-    src/model/chatmessage.h
-    src/model/layerinfo.h
-    src/model/maptooltype.h
-    src/model/numericdataset.h
+    src/model/dto/analysisresult.h
+    src/model/dto/chatmessage.h
+    src/model/dto/layerinfo.h
+    src/model/dto/numericdataset.h
+    src/model/enums/maptooltype.h
+    src/model/legacy/aimodule.cpp
+    src/model/legacy/aimodule.h
+    src/model/legacy/analysismodule.cpp
+    src/model/legacy/analysismodule.h
+    src/model/legacy/datamodule.cpp
+    src/model/legacy/datamodule.h
 
-    src/service/analysisservice.cpp
-    src/service/analysisservice.h
-    src/service/dataservice.cpp
-    src/service/dataservice.h
-    src/service/numericdatareader.cpp
-    src/service/numericdatareader.h
+    src/service/analysis/analysisservice.cpp
+    src/service/analysis/analysisservice.h
+    src/service/data/dataservice.cpp
+    src/service/data/dataservice.h
+    src/service/data/numericdatareader.cpp
+    src/service/data/numericdatareader.h
 
     src/ui/mainwindow.cpp
     src/ui/mainwindow.h
     src/ui/docks/aidockwidget.cpp
     src/ui/docks/aidockwidget.h
-    src/ui/style/imagebutton.cpp
-    src/ui/style/imagebutton.h
-    src/ui/widgets/mapcanvaswidget.cpp
-    src/ui/widgets/mapcanvaswidget.h
-    src/ui/widgets/mapcanvasmanager.cpp
-    src/ui/widgets/mapcanvasmanager.h
+    src/ui/components/imagebutton.cpp
+    src/ui/components/imagebutton.h
+    src/ui/map/mapcanvaswidget.cpp
+    src/ui/map/mapcanvaswidget.h
+    src/ui/map/mapcanvasmanager.cpp
+    src/ui/map/mapcanvasmanager.h
 )
 
 target_include_directories(FirstQT PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/ui
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/style
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/widgets
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/model
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/core
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/service
     ${CMAKE_CURRENT_SOURCE_DIR}/resources
     ${OSGEO4W_GDAL_ROOT}/include
     ${OSGEO4W_QGIS_ROOT}/include

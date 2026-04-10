@@ -53,25 +53,37 @@ mpoDataset：表示类成员变量（m），指针（p），GDAL对象（o），
 ## 代码生成细节
 
 每个类的成员需要有明确注释表面成员的表示含义。每个类的方法要在头文件包含以下注释：
-/\*
-\*@brief：简述这个方法的主要职能
-\*@pram\_i（如果有）:简述第i个参数的含义
-\*/
+/*
+**@brief：简述这个方法的主要职能
+**@pram\_i（如果有）:简述第i个参数的含义
+*/
+
+在每个头文件里面，要有这个类功能和接口的简要描述
 
 ## 代码层次描述
 
-**`model/`**  — 纯数据结构，不含业务逻辑
+**`model/`**  — 纯数据结构层，不含业务逻辑
 
-- 图层数据（LayerData）、分析结果（AnalysisResult）、AI消息（ChatMessage）等 struct/class
+- `model/dto/`：数据传输对象，只承载字段，不写业务行为
+- `model/enums/`：跨层共享的枚举定义
+- `model/legacy/`：待重构旧代码，默认不再扩展新能力
 
-**`service/`**  — 业务逻辑与算法，不含UI、不含网络细节
+**`core/`**  — 基础设施与编排层，不直接承载具体业务算法
 
-- `AnalysisService`：空间分析算法调度
-- `DataService`：数据加载与图层管理
+- `core/ai/`：AI 编排，对话、tool_call、记忆、模型通信
+- `core/workflow/`：工作流状态机与多轮参数收集逻辑
+- `core/integration/`：第三方运行时或外部基础设施集成
+- `core/interfaces/`：核心抽象接口与桥接契约
 
-**`core/`**  — 基础设施，与业务无关
+**`service/`**  — 业务逻辑与算法层，不含 UI，不直接处理模型通信
 
-- `AINetworkClient`：与 Ollama 的 HTTP 通信
-- `AIConversationManager`：多轮对话历史管理、tool\_call 流程
+- `service/data/`：数据加载、格式解析、数据准备
+- `service/analysis/`：分析算法与分析结果封装
 
-**`ui/`**  — 纯UI，只通过信号槽与 service/core 通信，不直接调用算法
+**`ui/`**  — 表现层，只通过信号槽与 service/core 通信，不直接实现算法
+
+- `ui/docks/`：可停靠面板
+- `ui/components/`：通用 UI 组件
+- `ui/map/`：地图视图与画布管理
+
+新增或调整子层时，需要同步更新 `structure.txt` 与当前规则描述。

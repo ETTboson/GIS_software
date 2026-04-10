@@ -429,7 +429,7 @@
   <customwidget>
    <class>ImageButton</class>
    <extends>QWidget</extends>
-   <header>ui/style/imagebutton.h</header>
+   <header>ui/components/imagebutton.h</header>
   </customwidget>
  </customwidgets>
 
