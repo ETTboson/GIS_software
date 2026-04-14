@@ -66,13 +66,6 @@ add_executable(FirstQT
     src/model/dto/layerinfo.h
     src/model/dto/numericdataset.h
     src/model/enums/maptooltype.h
-    src/model/legacy/aimodule.cpp
-    src/model/legacy/aimodule.h
-    src/model/legacy/analysismodule.cpp
-    src/model/legacy/analysismodule.h
-    src/model/legacy/datamodule.cpp
-    src/model/legacy/datamodule.h
-
     src/service/analysis/analysisservice.cpp
     src/service/analysis/analysisservice.h
     src/service/data/dataservice.cpp

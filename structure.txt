@@ -21,10 +21,6 @@ src/
 │   │   └── numericdataset.h           # 数值型数据集 DTO（CSV/简单栅格分析输入）
 │   ├── enums/
 │   │   └── maptooltype.h              # 地图交互工具类型枚举
-│   └── legacy/
-│       ├── aimodule.h/cpp             # 旧版 AI 模块（保留，待重构）
-│       ├── analysismodule.h/cpp       # 旧版分析模块（保留，待重构）
-│       └── datamodule.h/cpp           # 旧版数据模块（保留，待重构）
 │
 ├── core/                              # 基础核心层，负责 AI 编排、工作流与运行时集成
 │   ├── ai/
