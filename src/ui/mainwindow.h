@@ -13,6 +13,7 @@
 
 #include "model/dto/layerinfo.h"
 #include "model/dto/analysisresult.h"
+#include "model/dto/numericdataset.h"
 #include "model/enums/maptooltype.h"
 #include "core/interfaces/iaitoolhost.h"
 
@@ -23,6 +24,9 @@ class ImageButton;
 class AIDockWidget;
 class MapCanvasManager;
 class MapCanvasWidget;
+class VisualizationManager;
+class VisualizationDockWidget;
+class QAction;
 class QComboBox;
 class QSpinBox;
 class QPushButton;
@@ -82,7 +86,9 @@ private:
     void createAIDock();
     void createAttributeDock();
     void createAnalysisDock();
+    void createVisualizationDock();
     void createLogDock();
+    void ensureVisualizationMenuAction();
 
     /*
      * @brief 根据当前界面选择执行一次数据分析
@@ -90,9 +96,31 @@ private:
     void runSelectedAnalysis();
 
     /*
+     * @brief 按指定参数执行分析
+     * @param_1 _nMethodIdx: 分析方法索引
+     * @param_2 _nFrequencyBins: 频率统计分箱数
+     * @param_3 _nNeighborhoodWindow: 邻域窗口大小
+     * @param_4 _bSyncWidgets: 是否同步界面控件状态
+     */
+    void runAnalysisByConfig(int _nMethodIdx,
+        int _nFrequencyBins,
+        int _nNeighborhoodWindow,
+        bool _bSyncWidgets);
+
+    /*
      * @brief 根据分析方法更新参数控件可用状态
      */
     void updateAnalysisParameterWidgets();
+
+    /*
+     * @brief 缓存当前待执行分析配置
+     * @param_1 _nMethodIdx: 分析方法索引
+     * @param_2 _nFrequencyBins: 频率统计分箱数
+     * @param_3 _nNeighborhoodWindow: 邻域窗口大小
+     */
+    void cachePendingAnalysisConfig(int _nMethodIdx,
+        int _nFrequencyBins,
+        int _nNeighborhoodWindow);
 
 private slots:
     void onOpenData();
@@ -111,6 +139,7 @@ private slots:
     void onAIChat();
     void onAbout();
     void onDataLoaded(const LayerInfo& _layerInfo);
+    void onNumericDataLoaded(const NumericDataset& _dataSet);
     void onDataLoadFailed(const QString& _strErrorMsg);
     void onAnalysisFinished(const AnalysisResult& _result);
     void onAnalysisFailed(const AnalysisResult& _result);
@@ -141,6 +170,8 @@ private:
     QDockWidget* mpctrlDockAttribute;
     QDockWidget* mpctrlDockAnalysis;
     QDockWidget* mpctrlDockLog;
+    VisualizationDockWidget* mpctrlDockVisualization;
+    QAction* mpctrlActionToggleVisualizationPanel;
     QgsLayerTreeView* mpctrlLayerTreeView;
     QTableView* mpctrlAttrTable;
     QTextEdit* mpctrlLogView;
@@ -154,6 +185,17 @@ private:
     QSpinBox* mpctrlSpinNeighborhoodWindow;   // 邻域分析窗口大小
     QPushButton* mpctrlBtnRunAnalysis;        // 执行分析按钮
     QTextEdit* mpctrlAnalysisResultView;      // 分析结果展示区
+    VisualizationManager* mpVisualizationManager; // 可视化协调器
+
+    bool mbHasPendingAnalysisConfig;          // 当前是否存在待提交的分析配置
+    int mnPendingAnalysisMethodIdx;           // 待提交的分析方法索引
+    int mnPendingFrequencyBins;               // 待提交的频率统计分箱数
+    int mnPendingNeighborhoodWindow;          // 待提交的邻域窗口大小
+
+    bool mbHasLastSuccessfulAnalysis;         // 当前是否缓存了最近一次成功分析配置
+    int mnLastAnalysisMethodIdx;              // 最近一次成功分析的方法索引
+    int mnLastFrequencyBins;                  // 最近一次成功分析的频率统计分箱数
+    int mnLastNeighborhoodWindow;             // 最近一次成功分析的邻域窗口大小
 };
 
 #endif // MAINWINDOW_H_A1B2C3D4E5F6

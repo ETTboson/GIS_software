@@ -18,9 +18,13 @@ src/
 │   │   ├── layerinfo.h                # 图层信息 DTO
 │   │   ├── chatmessage.h              # AI 对话消息 DTO
 │   │   ├── analysisresult.h           # 分析结果 DTO
-│   │   └── numericdataset.h           # 数值型数据集 DTO（CSV/简单栅格分析输入）
+│   │   ├── numericdataset.h           # 数值型数据集 DTO（CSV/简单栅格分析输入）
+│   │   ├── visualizationdata.h        # 图表展示 DTO，承载标题、坐标轴与系列列表
+│   │   ├── visualizationseries.h      # 图表系列 DTO，承载系列名、颜色与数据点列表
+│   │   └── visualizationpoint.h       # 图表数据点 DTO，承载标签、数值与 tooltip 元信息
 │   ├── enums/
-│   │   └── maptooltype.h              # 地图交互工具类型枚举
+│   │   ├── maptooltype.h              # 地图交互工具类型枚举
+│   │   └── visualizationcharttype.h   # 可视化图表类型枚举
 │
 ├── core/                              # 基础核心层，负责 AI 编排、工作流与运行时集成
 │   ├── ai/
@@ -51,6 +55,13 @@ src/
     │   └── aidockwidget.h/cpp         # Claude Code CLI 风格 AI 终端 Dock
     ├── components/
     │   └── imagebutton.h/cpp          # 通用图像按钮控件
-    └── map/
-        ├── mapcanvaswidget.h/cpp      # 单个地图画布封装
-        └── mapcanvasmanager.h/cpp     # 多画布管理器
+    ├── map/
+    │   ├── mapcanvaswidget.h/cpp      # 单个地图画布封装
+    │   └── mapcanvasmanager.h/cpp     # 多画布管理器
+    └── visualization/
+        ├── visualizationdockwidget.h/cpp # 可视化结果 Dock，承载占位页、图表页与详情区
+        ├── visualizationmanager.h/cpp # 可视化协调器，负责 AnalysisResult 到图表控件的分发刷新
+        └── charts/
+            ├── chartwidget.h/cpp      # 图表基类，统一处理 DTO 绑定、悬停 tooltip 与点击选中
+            ├── barchartwidget.h/cpp   # 柱状图控件，负责基础统计与频率统计展示
+            └── linechartwidget.h/cpp  # 折线图控件，负责邻域分析行趋势展示

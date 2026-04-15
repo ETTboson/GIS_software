@@ -5,10 +5,12 @@
 #include <QObject>
 #include <QString>
 #include <QJsonObject>
+#include <QMap>
 
 #include "model/dto/layerinfo.h"
 #include "model/dto/analysisresult.h"
 #include "model/dto/numericdataset.h"
+#include "model/dto/visualizationdata.h"
 
 // ════════════════════════════════════════════════════════
 //  AnalysisService
@@ -127,6 +129,43 @@ private:
      * @brief 构造失败结果并发出失败信号
      */
     void emitFailure(const QString& _strType, const QString& _strError);
+
+    /*
+     * @brief 为基础统计结果构造柱状图数据
+     * @param_1 _dMinValue: 最小值
+     * @param_2 _dMaxValue: 最大值
+     * @param_3 _dMeanValue: 均值
+     */
+    VisualizationData buildBasicStatisticsVisualization(double _dMinValue,
+        double _dMaxValue,
+        double _dMeanValue) const;
+
+    /*
+     * @brief 为离散频率统计结果构造柱状图数据
+     * @param_1 _mapDiscreteCounts: 离散值频次映射
+     */
+    VisualizationData buildDiscreteFrequencyVisualization(
+        const QMap<long long, int>& _mapDiscreteCounts) const;
+
+    /*
+     * @brief 为分箱频率统计结果构造柱状图数据
+     * @param_1 _vnBins: 分箱计数列表
+     * @param_2 _dMinValue: 数据最小值
+     * @param_3 _dMaxValue: 数据最大值
+     * @param_4 _dBinWidth: 单箱宽度
+     */
+    VisualizationData buildContinuousFrequencyVisualization(
+        const QVector<int>& _vnBins,
+        double _dMinValue,
+        double _dMaxValue,
+        double _dBinWidth) const;
+
+    /*
+     * @brief 为邻域分析结果构造折线图数据
+     * @param_1 _vdNeighborhoodMeans: 按行优先展开的邻域均值列表
+     */
+    VisualizationData buildNeighborhoodVisualization(
+        const QVector<double>& _vdNeighborhoodMeans) const;
 
     NumericDataset mDataSetReady;   // 当前可分析的数值型数据
     QString        mstrReadyDataPath; // 最近加载的数据路径

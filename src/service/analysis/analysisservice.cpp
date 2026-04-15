@@ -3,6 +3,7 @@
 
 #include <QMap>
 #include <QMetaObject>
+#include <QStringList>
 #include <QtMath>
 
 AnalysisService::AnalysisService(QObject* _pParent)
@@ -53,9 +54,14 @@ void AnalysisService::runBasicStatistics()
 
     emit analysisProgress(100);
 
+    const double _dMeanValue = _dSumValue / _vdValues.size();
+
     AnalysisResult _result;
     _result.strType = "basic_statistics";
     _result.bSuccess = true;
+    _result.bHasVisualization = true;
+    _result.dataVisualization = buildBasicStatisticsVisualization(
+        _dMinValue, _dMaxValue, _dMeanValue);
     _result.strDesc = tr(
         "基础统计分析完成\n"
         "数据集：%1\n"
@@ -70,7 +76,7 @@ void AnalysisService::runBasicStatistics()
         .arg(mDataSetReady.nCols)
         .arg(_dMinValue, 0, 'f', 6)
         .arg(_dMaxValue, 0, 'f', 6)
-        .arg(_dSumValue / _vdValues.size(), 0, 'f', 6);
+        .arg(_dMeanValue, 0, 'f', 6);
     emit analysisFinished(_result);
 }
 
@@ -91,7 +97,7 @@ void AnalysisService::runFrequencyStatistics(int _nBinCount)
     const QVector<double>& _vdValues = mDataSetReady.vdValues;
     double _dMinValue = _vdValues[0];
     double _dMaxValue = _vdValues[0];
-    QMap<QString, int> _mapDiscreteCounts;
+    QMap<long long, int> _mapDiscreteCounts;
     bool _bDiscrete = true;
 
     for (double _dValue : _vdValues) {
@@ -105,10 +111,11 @@ void AnalysisService::runFrequencyStatistics(int _nBinCount)
     }
 
     QStringList _vLines;
+    VisualizationData _dataVisualization;
     if (_bDiscrete) {
         for (double _dValue : _vdValues) {
-            const QString _strKey = QString::number(static_cast<long long>(qRound64(_dValue)));
-            _mapDiscreteCounts[_strKey] += 1;
+            const long long _lKey = qRound64(_dValue);
+            _mapDiscreteCounts[_lKey] += 1;
         }
 
         _vLines << tr("频率统计完成（离散值模式）");
@@ -116,6 +123,7 @@ void AnalysisService::runFrequencyStatistics(int _nBinCount)
         for (auto _it = _mapDiscreteCounts.constBegin(); _it != _mapDiscreteCounts.constEnd(); ++_it) {
             _vLines << tr("值 %1 : %2 次").arg(_it.key()).arg(_it.value());
         }
+        _dataVisualization = buildDiscreteFrequencyVisualization(_mapDiscreteCounts);
     } else {
         QVector<int> _vnBins(_nBinCount, 0);
         const double _dRange = _dMaxValue - _dMinValue;
@@ -148,6 +156,9 @@ void AnalysisService::runFrequencyStatistics(int _nBinCount)
                 .arg(_dRight, 0, 'f', 6)
                 .arg(_vnBins[_nBinIdx]);
         }
+
+        _dataVisualization = buildContinuousFrequencyVisualization(
+            _vnBins, _dMinValue, _dMaxValue, _dBinWidth);
     }
 
     emit analysisProgress(100);
@@ -155,6 +166,8 @@ void AnalysisService::runFrequencyStatistics(int _nBinCount)
     AnalysisResult _result;
     _result.strType = "frequency_statistics";
     _result.bSuccess = true;
+    _result.bHasVisualization = true;
+    _result.dataVisualization = _dataVisualization;
     _result.strDesc = _vLines.join("\n");
     emit analysisFinished(_result);
 }
@@ -229,6 +242,8 @@ void AnalysisService::runNeighborhoodAnalysis(int _nWindowSize)
     AnalysisResult _result;
     _result.strType = "neighborhood_analysis";
     _result.bSuccess = true;
+    _result.bHasVisualization = true;
+    _result.dataVisualization = buildNeighborhoodVisualization(_vdNeighborhoodMeans);
     _result.strDesc = tr(
         "邻域分析完成\n"
         "数据集：%1\n"
@@ -354,5 +369,153 @@ void AnalysisService::emitFailure(const QString& _strType, const QString& _strEr
     _result.strType = _strType;
     _result.strDesc = _strError;
     _result.bSuccess = false;
+    _result.bHasVisualization = false;
     emit analysisFailed(_result);
+}
+
+VisualizationData AnalysisService::buildBasicStatisticsVisualization(
+    double _dMinValue, double _dMaxValue, double _dMeanValue) const
+{
+    VisualizationSeries _series;
+    _series.strName = tr("基础统计");
+    _series.strColorHex = "#3E7CB1";
+
+    VisualizationPoint _pointMin;
+    _pointMin.strLabel = tr("最小值");
+    _pointMin.dValue = _dMinValue;
+    _pointMin.strToolTip = tr("数据集：%1\n最小值：%2")
+        .arg(mDataSetReady.strName)
+        .arg(_dMinValue, 0, 'f', 6);
+    _pointMin.nSourceIndex = 0;
+    _series.vPoints.append(_pointMin);
+
+    VisualizationPoint _pointMax;
+    _pointMax.strLabel = tr("最大值");
+    _pointMax.dValue = _dMaxValue;
+    _pointMax.strToolTip = tr("数据集：%1\n最大值：%2")
+        .arg(mDataSetReady.strName)
+        .arg(_dMaxValue, 0, 'f', 6);
+    _pointMax.nSourceIndex = 1;
+    _series.vPoints.append(_pointMax);
+
+    VisualizationPoint _pointMean;
+    _pointMean.strLabel = tr("均值");
+    _pointMean.dValue = _dMeanValue;
+    _pointMean.strToolTip = tr("数据集：%1\n均值：%2")
+        .arg(mDataSetReady.strName)
+        .arg(_dMeanValue, 0, 'f', 6);
+    _pointMean.nSourceIndex = 2;
+    _series.vPoints.append(_pointMean);
+
+    VisualizationData _dataVisualization;
+    _dataVisualization.strTitle = tr("基础统计结果");
+    _dataVisualization.strXAxisTitle = tr("统计指标");
+    _dataVisualization.strYAxisTitle = tr("数值");
+    _dataVisualization.chartTypeSuggested = VisualizationChartType::BarChart;
+    _dataVisualization.strSourceAnalysisType = "basic_statistics";
+    _dataVisualization.vSeries.append(_series);
+    return _dataVisualization;
+}
+
+VisualizationData AnalysisService::buildDiscreteFrequencyVisualization(
+    const QMap<long long, int>& _mapDiscreteCounts) const
+{
+    VisualizationSeries _series;
+    _series.strName = tr("频率统计");
+    _series.strColorHex = "#2A9D8F";
+
+    for (auto _it = _mapDiscreteCounts.constBegin(); _it != _mapDiscreteCounts.constEnd(); ++_it) {
+        VisualizationPoint _point;
+        _point.strLabel = QString::number(_it.key());
+        _point.dValue = _it.value();
+        _point.strToolTip = tr("数据集：%1\n值：%2\n频次：%3")
+            .arg(mDataSetReady.strName)
+            .arg(_it.key())
+            .arg(_it.value());
+        _point.nSourceIndex = static_cast<int>(_it.key());
+        _series.vPoints.append(_point);
+    }
+
+    VisualizationData _dataVisualization;
+    _dataVisualization.strTitle = tr("频率统计结果");
+    _dataVisualization.strXAxisTitle = tr("数据值");
+    _dataVisualization.strYAxisTitle = tr("出现次数");
+    _dataVisualization.chartTypeSuggested = VisualizationChartType::BarChart;
+    _dataVisualization.strSourceAnalysisType = "frequency_statistics";
+    _dataVisualization.vSeries.append(_series);
+    return _dataVisualization;
+}
+
+VisualizationData AnalysisService::buildContinuousFrequencyVisualization(
+    const QVector<int>& _vnBins, double _dMinValue, double _dMaxValue,
+    double _dBinWidth) const
+{
+    VisualizationSeries _series;
+    _series.strName = tr("频率统计");
+    _series.strColorHex = "#2A9D8F";
+
+    for (int _nBinIdx = 0; _nBinIdx < _vnBins.size(); ++_nBinIdx) {
+        const double _dLeft = _dMinValue + _nBinIdx * _dBinWidth;
+        const double _dRight = (_nBinIdx == _vnBins.size() - 1)
+            ? _dMaxValue
+            : (_dLeft + _dBinWidth);
+
+        VisualizationPoint _point;
+        _point.strLabel = tr("[%1, %2]")
+            .arg(_dLeft, 0, 'f', 2)
+            .arg(_dRight, 0, 'f', 2);
+        _point.dValue = _vnBins[_nBinIdx];
+        _point.strToolTip = tr("数据集：%1\n区间：[%2, %3]\n频次：%4")
+            .arg(mDataSetReady.strName)
+            .arg(_dLeft, 0, 'f', 6)
+            .arg(_dRight, 0, 'f', 6)
+            .arg(_vnBins[_nBinIdx]);
+        _point.nSourceIndex = _nBinIdx;
+        _series.vPoints.append(_point);
+    }
+
+    VisualizationData _dataVisualization;
+    _dataVisualization.strTitle = tr("频率统计结果");
+    _dataVisualization.strXAxisTitle = tr("分箱区间");
+    _dataVisualization.strYAxisTitle = tr("出现次数");
+    _dataVisualization.chartTypeSuggested = VisualizationChartType::BarChart;
+    _dataVisualization.strSourceAnalysisType = "frequency_statistics";
+    _dataVisualization.vSeries.append(_series);
+    return _dataVisualization;
+}
+
+VisualizationData AnalysisService::buildNeighborhoodVisualization(
+    const QVector<double>& _vdNeighborhoodMeans) const
+{
+    VisualizationSeries _series;
+    _series.strName = tr("行趋势");
+    _series.strColorHex = "#E76F51";
+
+    for (int _nRowIdx = 0; _nRowIdx < mDataSetReady.nRows; ++_nRowIdx) {
+        double _dRowSum = 0.0;
+        for (int _nColIdx = 0; _nColIdx < mDataSetReady.nCols; ++_nColIdx) {
+            _dRowSum += _vdNeighborhoodMeans[valueIndex(_nRowIdx, _nColIdx)];
+        }
+
+        const double _dRowMean = _dRowSum / mDataSetReady.nCols;
+        VisualizationPoint _point;
+        _point.strLabel = tr("第%1行").arg(_nRowIdx + 1);
+        _point.dValue = _dRowMean;
+        _point.strToolTip = tr("数据集：%1\n行号：%2\n行邻域均值：%3")
+            .arg(mDataSetReady.strName)
+            .arg(_nRowIdx + 1)
+            .arg(_dRowMean, 0, 'f', 6);
+        _point.nRowIndex = _nRowIdx;
+        _point.nSourceIndex = _nRowIdx;
+        _series.vPoints.append(_point);
+    }
+
+    VisualizationData _dataVisualization;
+    _dataVisualization.strTitle = tr("邻域分析行趋势");
+    _dataVisualization.strXAxisTitle = tr("行号");
+    _dataVisualization.strYAxisTitle = tr("邻域均值");
+    _dataVisualization.chartTypeSuggested = VisualizationChartType::LineChart;
+    _dataVisualization.strSourceAnalysisType = "neighborhood_analysis";
+    _dataVisualization.vSeries.append(_series);
+    return _dataVisualization;
 }

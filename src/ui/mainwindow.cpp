@@ -4,16 +4,21 @@
 #include "ui/docks/aidockwidget.h"
 #include "ui/map/mapcanvaswidget.h"
 #include "ui/map/mapcanvasmanager.h"
+#include "ui/visualization/visualizationdockwidget.h"
+#include "ui/visualization/visualizationmanager.h"
 #include "service/data/dataservice.h"
 #include "service/analysis/analysisservice.h"
 #include "core/ai/aimanager.h"
 
 #include <QComboBox>
+#include <QAction>
 #include <QFileDialog>
 #include <QHBoxLayout>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QLabel>
+#include <QMenu>
+#include <QMenuBar>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QSpinBox>
@@ -41,6 +46,8 @@ MainWindow::MainWindow(QWidget* _pParent)
     , mpctrlDockAttribute(nullptr)
     , mpctrlDockAnalysis(nullptr)
     , mpctrlDockLog(nullptr)
+    , mpctrlDockVisualization(nullptr)
+    , mpctrlActionToggleVisualizationPanel(nullptr)
     , mpctrlLayerTreeView(nullptr)
     , mpctrlAttrTable(nullptr)
     , mpctrlLogView(nullptr)
@@ -53,6 +60,15 @@ MainWindow::MainWindow(QWidget* _pParent)
     , mpctrlSpinNeighborhoodWindow(nullptr)
     , mpctrlBtnRunAnalysis(nullptr)
     , mpctrlAnalysisResultView(nullptr)
+    , mpVisualizationManager(nullptr)
+    , mbHasPendingAnalysisConfig(false)
+    , mnPendingAnalysisMethodIdx(0)
+    , mnPendingFrequencyBins(10)
+    , mnPendingNeighborhoodWindow(3)
+    , mbHasLastSuccessfulAnalysis(false)
+    , mnLastAnalysisMethodIdx(0)
+    , mnLastFrequencyBins(10)
+    , mnLastNeighborhoodWindow(3)
 {
     mpUI->setupUi(this);
 
@@ -77,6 +93,9 @@ MainWindow::~MainWindow()
     delete mpMapCanvasManager;
     mpMapCanvasManager = nullptr;
 
+    delete mpVisualizationManager;
+    mpVisualizationManager = nullptr;
+
     delete mpUI;
     mpUI = nullptr;
 }
@@ -87,6 +106,7 @@ void MainWindow::initModules()
     mpAnalysisService = new AnalysisService(this);
     mpAIManager = new AIManager(this);
     mpMapCanvasManager = new MapCanvasManager(this);
+    mpVisualizationManager = new VisualizationManager(this);
 
     mpAIManager->setToolHost(this);
 
@@ -146,6 +166,24 @@ bool MainWindow::executeAnalysisTool(const QString& _strToolName,
         return false;
     }
 
+    if (_strToolName == "run_buffer_analysis") {
+        cachePendingAnalysisConfig(
+            0,
+            (mpctrlSpinFrequencyBins != nullptr) ? mpctrlSpinFrequencyBins->value() : 10,
+            (mpctrlSpinNeighborhoodWindow != nullptr) ? mpctrlSpinNeighborhoodWindow->value() : 3);
+    } else if (_strToolName == "run_overlay_analysis") {
+        cachePendingAnalysisConfig(
+            1,
+            10,
+            (mpctrlSpinNeighborhoodWindow != nullptr) ? mpctrlSpinNeighborhoodWindow->value() : 3);
+    } else if (_strToolName == "run_spatial_query"
+        || _strToolName == "run_raster_calc") {
+        cachePendingAnalysisConfig(
+            2,
+            (mpctrlSpinFrequencyBins != nullptr) ? mpctrlSpinFrequencyBins->value() : 10,
+            3);
+    }
+
     const AnalysisResult _result = mpAnalysisService->executeToolCall(
         _strToolName, _jsonArgs);
     if (_result.bSuccess) {
@@ -153,6 +191,7 @@ bool MainWindow::executeAnalysisTool(const QString& _strToolName,
         return true;
     }
 
+    mbHasPendingAnalysisConfig = false;
     _strError = _result.strDesc;
     return false;
 }
@@ -177,6 +216,7 @@ void MainWindow::initDockWidgets()
     createAIDock();
     createAttributeDock();
     createAnalysisDock();
+    createVisualizationDock();
     createLogDock();
 }
 
@@ -315,6 +355,21 @@ void MainWindow::createAnalysisDock()
     updateAnalysisParameterWidgets();
 }
 
+void MainWindow::createVisualizationDock()
+{
+    mpctrlDockVisualization = new VisualizationDockWidget(this);
+    mpVisualizationManager->attachDock(mpctrlDockVisualization);
+    ensureVisualizationMenuAction();
+
+    addDockWidget(Qt::RightDockWidgetArea, mpctrlDockVisualization);
+    mpctrlDockVisualization->setVisible(false);
+
+    connect(mpctrlActionToggleVisualizationPanel, &QAction::toggled,
+        mpctrlDockVisualization, &QDockWidget::setVisible);
+    connect(mpctrlDockVisualization, &QDockWidget::visibilityChanged,
+        mpctrlActionToggleVisualizationPanel, &QAction::setChecked);
+}
+
 void MainWindow::createLogDock()
 {
     mpctrlDockLog = new QDockWidget(tr("日志"), this);
@@ -334,6 +389,28 @@ void MainWindow::createLogDock()
         mpctrlDockLog, &QDockWidget::setVisible);
     connect(mpctrlDockLog, &QDockWidget::visibilityChanged,
         mpUI->actionToggleLogPanel, &QAction::setChecked);
+}
+
+void MainWindow::ensureVisualizationMenuAction()
+{
+    if (mpctrlActionToggleVisualizationPanel != nullptr) {
+        return;
+    }
+
+    mpctrlActionToggleVisualizationPanel =
+        findChild<QAction*>("actionToggleVisualizationPanel");
+    if (mpctrlActionToggleVisualizationPanel == nullptr) {
+        mpctrlActionToggleVisualizationPanel = new QAction(tr("可视化面板"), this);
+        mpctrlActionToggleVisualizationPanel->setObjectName("actionToggleVisualizationPanel");
+        mpctrlActionToggleVisualizationPanel->setCheckable(true);
+        mpctrlActionToggleVisualizationPanel->setChecked(false);
+    }
+
+    QMenu* _pMenuView = menuBar()->findChild<QMenu*>("menuView");
+    if (_pMenuView != nullptr
+        && !_pMenuView->actions().contains(mpctrlActionToggleVisualizationPanel)) {
+        _pMenuView->addAction(mpctrlActionToggleVisualizationPanel);
+    }
 }
 
 void MainWindow::initStatusBar()
@@ -396,6 +473,8 @@ void MainWindow::initConnections()
         mpAnalysisService, &AnalysisService::onDataReady);
     connect(mpDataService, &DataService::numericDataLoaded,
         mpAnalysisService, &AnalysisService::onNumericDataReady);
+    connect(mpDataService, &DataService::numericDataLoaded,
+        this, &MainWindow::onNumericDataLoaded);
 
     connect(mpMapCanvasManager, &MapCanvasManager::activeCanvasChanged,
         this, &MainWindow::onActiveCanvasChanged);
@@ -550,8 +629,9 @@ void MainWindow::onDataLoaded(const LayerInfo& _layerInfo)
     if (_layerInfo.strType == "table" || _layerInfo.strType == "simple_raster") {
         mpctrlLabelAnalysisData->setText(
             tr("当前数据：%1 (%2)").arg(_layerInfo.strName, _layerInfo.strType));
-        mpctrlAnalysisResultView->setPlainText(
-            tr("数据已加载，可以选择分析方法后执行。"));
+        mpctrlAnalysisResultView->setPlainText(mbHasLastSuccessfulAnalysis
+            ? tr("检测到新的数值数据，正在按上一次成功分析配置自动刷新结果。")
+            : tr("数据已加载，可以选择分析方法后执行。"));
         mpctrlDockAnalysis->setVisible(true);
     }
 
@@ -560,6 +640,25 @@ void MainWindow::onDataLoaded(const LayerInfo& _layerInfo)
     if (mpctrlLogView != nullptr) {
         mpctrlLogView->append(
             tr("[数据] 已加载: %1 (%2)").arg(_layerInfo.strFilePath, _layerInfo.strType));
+    }
+}
+
+void MainWindow::onNumericDataLoaded(const NumericDataset& _dataSet)
+{
+    Q_UNUSED(_dataSet)
+
+    if (mbHasLastSuccessfulAnalysis) {
+        mpctrlLabelStatus->setText(tr("  正在自动刷新分析结果...  "));
+        runAnalysisByConfig(
+            mnLastAnalysisMethodIdx,
+            mnLastFrequencyBins,
+            mnLastNeighborhoodWindow,
+            true);
+        return;
+    }
+
+    if (mpVisualizationManager != nullptr) {
+        mpVisualizationManager->clearView(tr("数据已更新，请执行分析以生成图表。"));
     }
 }
 
@@ -581,6 +680,17 @@ void MainWindow::onAnalysisFinished(const AnalysisResult& _result)
     if (mpctrlLogView != nullptr) {
         mpctrlLogView->append(tr("[分析] %1").arg(_result.strDesc));
     }
+    if (mpVisualizationManager != nullptr) {
+        mpVisualizationManager->updateFromResult(_result);
+    }
+
+    if (mbHasPendingAnalysisConfig) {
+        mbHasLastSuccessfulAnalysis = true;
+        mnLastAnalysisMethodIdx = mnPendingAnalysisMethodIdx;
+        mnLastFrequencyBins = mnPendingFrequencyBins;
+        mnLastNeighborhoodWindow = mnPendingNeighborhoodWindow;
+        mbHasPendingAnalysisConfig = false;
+    }
 }
 
 void MainWindow::onAnalysisFailed(const AnalysisResult& _result)
@@ -592,6 +702,10 @@ void MainWindow::onAnalysisFailed(const AnalysisResult& _result)
     if (mpctrlLogView != nullptr) {
         mpctrlLogView->append(tr("[分析失败] %1").arg(_result.strDesc));
     }
+    if (mpVisualizationManager != nullptr) {
+        mpVisualizationManager->clearView(_result.strDesc);
+    }
+    mbHasPendingAnalysisConfig = false;
     QMessageBox::warning(this, tr("分析失败"), _result.strDesc);
 }
 
@@ -638,19 +752,52 @@ void MainWindow::runSelectedAnalysis()
         return;
     }
 
-    mpctrlDockAnalysis->setVisible(true);
+    runAnalysisByConfig(
+        mpctrlComboAnalysisMethod->currentIndex(),
+        (mpctrlSpinFrequencyBins != nullptr) ? mpctrlSpinFrequencyBins->value() : 10,
+        (mpctrlSpinNeighborhoodWindow != nullptr) ? mpctrlSpinNeighborhoodWindow->value() : 3,
+        false);
+}
 
-    switch (mpctrlComboAnalysisMethod->currentIndex()) {
+void MainWindow::runAnalysisByConfig(int _nMethodIdx, int _nFrequencyBins,
+    int _nNeighborhoodWindow, bool _bSyncWidgets)
+{
+    if (mpAnalysisService == nullptr) {
+        return;
+    }
+
+    cachePendingAnalysisConfig(_nMethodIdx, _nFrequencyBins, _nNeighborhoodWindow);
+
+    if (_bSyncWidgets) {
+        if (mpctrlComboAnalysisMethod != nullptr) {
+            mpctrlComboAnalysisMethod->setCurrentIndex(_nMethodIdx);
+        }
+        if (mpctrlSpinFrequencyBins != nullptr) {
+            mpctrlSpinFrequencyBins->setValue(_nFrequencyBins);
+        }
+        if (mpctrlSpinNeighborhoodWindow != nullptr) {
+            mpctrlSpinNeighborhoodWindow->setValue(_nNeighborhoodWindow);
+        }
+    }
+
+    mpctrlDockAnalysis->setVisible(true);
+    if (mpctrlDockVisualization != nullptr) {
+        mpctrlDockVisualization->setVisible(true);
+    }
+    mpctrlLabelStatus->setText(tr("  分析中...  "));
+
+    switch (_nMethodIdx) {
     case 0:
         mpAnalysisService->runBasicStatistics();
         break;
     case 1:
-        mpAnalysisService->runFrequencyStatistics(mpctrlSpinFrequencyBins->value());
+        mpAnalysisService->runFrequencyStatistics(_nFrequencyBins);
         break;
     case 2:
-        mpAnalysisService->runNeighborhoodAnalysis(mpctrlSpinNeighborhoodWindow->value());
+        mpAnalysisService->runNeighborhoodAnalysis(_nNeighborhoodWindow);
         break;
     default:
+        mbHasPendingAnalysisConfig = false;
         break;
     }
 }
@@ -666,4 +813,13 @@ void MainWindow::updateAnalysisParameterWidgets()
 
     mpctrlSpinFrequencyBins->setEnabled(_bFrequency);
     mpctrlSpinNeighborhoodWindow->setEnabled(_bNeighborhood);
+}
+
+void MainWindow::cachePendingAnalysisConfig(int _nMethodIdx,
+    int _nFrequencyBins, int _nNeighborhoodWindow)
+{
+    mbHasPendingAnalysisConfig = true;
+    mnPendingAnalysisMethodIdx = _nMethodIdx;
+    mnPendingFrequencyBins = _nFrequencyBins;
+    mnPendingNeighborhoodWindow = _nNeighborhoodWindow;
 }

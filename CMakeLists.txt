@@ -65,7 +65,11 @@ add_executable(FirstQT
     src/model/dto/chatmessage.h
     src/model/dto/layerinfo.h
     src/model/dto/numericdataset.h
+    src/model/dto/visualizationdata.h
+    src/model/dto/visualizationpoint.h
+    src/model/dto/visualizationseries.h
     src/model/enums/maptooltype.h
+    src/model/enums/visualizationcharttype.h
     src/service/analysis/analysisservice.cpp
     src/service/analysis/analysisservice.h
     src/service/data/dataservice.cpp
@@ -83,6 +87,16 @@ add_executable(FirstQT
     src/ui/map/mapcanvaswidget.h
     src/ui/map/mapcanvasmanager.cpp
     src/ui/map/mapcanvasmanager.h
+    src/ui/visualization/visualizationdockwidget.cpp
+    src/ui/visualization/visualizationdockwidget.h
+    src/ui/visualization/visualizationmanager.cpp
+    src/ui/visualization/visualizationmanager.h
+    src/ui/visualization/charts/chartwidget.cpp
+    src/ui/visualization/charts/chartwidget.h
+    src/ui/visualization/charts/barchartwidget.cpp
+    src/ui/visualization/charts/barchartwidget.h
+    src/ui/visualization/charts/linechartwidget.cpp
+    src/ui/visualization/charts/linechartwidget.h
 )
 
 target_include_directories(FirstQT PRIVATE
