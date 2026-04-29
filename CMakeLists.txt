@@ -2,9 +2,9 @@ cmake_minimum_required(VERSION 3.20)
 
 # 以下第三方库当前未随仓库一起管理，因此这些路径仍需要开发者在本机配置为绝对路径。
 # 为了支持多人协作，这里只保留少量根目录变量，避免在源码中硬编码多处机器相关路径。
-set(OSGEO4W_ROOT "D:/OSGeo4W" CACHE PATH "OSGeo4W 安装根目录")
-set(LOG4CPP_ROOT "D:/OOP_2026/log4cpp-1.1.4" CACHE PATH "log4cpp 安装根目录")
-set(LIBXML2_ROOT "D:/OOP_2026/libxml2" CACHE PATH "libxml2 安装根目录")
+set(OSGEO4W_ROOT "" CACHE PATH "OSGeo4W 安装根目录，例如 D:/path/to/OSGeo4W")
+set(LOG4CPP_ROOT "" CACHE PATH "log4cpp 安装根目录，例如 D:/path/to/log4cpp-1.1.4")
+set(LIBXML2_ROOT "" CACHE PATH "libxml2 安装根目录，例如 D:/path/to/libxml2")
 
 foreach(_required_root IN ITEMS OSGEO4W_ROOT LOG4CPP_ROOT LIBXML2_ROOT)
     if(NOT DEFINED ${_required_root} OR "${${_required_root}}" STREQUAL "")
@@ -104,6 +104,10 @@ add_executable(FirstQT
     src/ui/docks/analysisworkspacedockwidget.h
     src/ui/components/imagebutton.cpp
     src/ui/components/imagebutton.h
+    src/ui/components/antbutton.cpp
+    src/ui/components/antbutton.h
+    src/ui/theme/antdesigntheme.cpp
+    src/ui/theme/antdesigntheme.h
     src/ui/map/mapcanvaswidget.cpp
     src/ui/map/mapcanvaswidget.h
     src/ui/map/mapcanvasmanager.cpp

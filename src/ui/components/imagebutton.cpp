@@ -23,8 +23,8 @@ ImageButton::ImageButton(QWidget *_pParent)
     , mbHovered(false)
     , mbPressed(false)
     , mbAutoScale(true)
-    , mnRadius(0)
-    , mnBorderWidth(0)
+    , mnRadius(8)
+    , mnBorderWidth(1)
     , mstrBorderColor(QString())
 {
     setAttribute(Qt::WA_Hover);
@@ -38,8 +38,8 @@ ImageButton::ImageButton(const QString &_strIconName, QWidget *_pParent)
     , mbHovered(false)
     , mbPressed(false)
     , mbAutoScale(true)
-    , mnRadius(0)
-    , mnBorderWidth(0)
+    , mnRadius(8)
+    , mnBorderWidth(1)
     , mstrBorderColor(QString())
 {
     setAttribute(Qt::WA_Hover);
@@ -141,10 +141,28 @@ void ImageButton::paintEvent(QPaintEvent *_pEvent)
     _painter.setRenderHint(QPainter::Antialiasing);
     _painter.setRenderHint(QPainter::SmoothPixmapTransform);
 
+    const QRectF _rectCard = QRectF(rect()).adjusted(2, 2, -2, -2);
+    QColor _colorBackground("#FFFFFF");
+    QColor _colorBorder("#E5E7EB");
+    if (!isEnabled()) {
+        _colorBackground = QColor("#F5F7FB");
+        _colorBorder = QColor("#E5E7EB");
+    } else if (mbPressed) {
+        _colorBackground = QColor("#E6F4FF");
+        _colorBorder = QColor("#0958D9");
+    } else if (mbHovered) {
+        _colorBackground = QColor("#F0F7FF");
+        _colorBorder = QColor("#1677FF");
+    }
+
+    _painter.setPen(Qt::NoPen);
+    _painter.setBrush(_colorBackground);
+    _painter.drawRoundedRect(_rectCard, mnRadius, mnRadius);
+
     // 圆角裁剪路径（radius == 0 时等价于无裁剪）
     if (mnRadius > 0) {
         QPainterPath _clipPath;
-        _clipPath.addRoundedRect(rect(), mnRadius, mnRadius);
+        _clipPath.addRoundedRect(_rectCard, mnRadius, mnRadius);
         _painter.setClipPath(_clipPath);
     }
 
@@ -167,7 +185,8 @@ void ImageButton::paintEvent(QPaintEvent *_pEvent)
     // ── 绘制图片 ──────────────────────────────────────
     if (_ppmCurrent != nullptr && !_ppmCurrent->isNull()) {
         if (mbAutoScale) {
-            _painter.drawPixmap(rect(), *_ppmCurrent);
+            _painter.drawPixmap(_rectCard.toRect().adjusted(4, 4, -4, -4),
+                *_ppmCurrent);
         } else {
             // 不缩放时居中显示
             int _nX = (width()  - _ppmCurrent->width())  / 2;
@@ -184,11 +203,11 @@ void ImageButton::paintEvent(QPaintEvent *_pEvent)
         _pen.setWidth(mnBorderWidth);
         _pen.setColor(QColor::isValidColor(mstrBorderColor)
                       ? QColor(mstrBorderColor)
-                      : Qt::black);
+                      : _colorBorder);
         _painter.setPen(_pen);
         _painter.setBrush(Qt::NoBrush);
 
-        QRectF _borderRect = QRectF(rect()).adjusted(
+        QRectF _borderRect = _rectCard.adjusted(
             mnBorderWidth * 0.5,  mnBorderWidth * 0.5,
            -mnBorderWidth * 0.5, -mnBorderWidth * 0.5);
         _painter.drawRoundedRect(_borderRect, mnRadius, mnRadius);

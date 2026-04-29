@@ -8,10 +8,10 @@
 #include "model/enums/visualizationcharttype.h"
 
 class DataRepository;
+class AntButton;
 class QLabel;
 class QListWidget;
 class QListWidgetItem;
-class QPushButton;
 class QSpinBox;
 class QStackedWidget;
 class QTabWidget;
@@ -185,16 +185,16 @@ private:
 
     QWidget*        mpctrlPageTools;      // Tools 页
     QLabel*         mpctrlLabelToolsHint; // Tools 页提示标签
-    QPushButton*    mpctrlBtnBasicStatistics; // 基础统计按钮
-    QPushButton*    mpctrlBtnFrequencyStatistics; // 频率统计按钮
+    AntButton*      mpctrlBtnBasicStatistics; // 基础统计按钮
+    AntButton*      mpctrlBtnFrequencyStatistics; // 频率统计按钮
     QSpinBox*       mpctrlSpinFrequencyBins; // 频率统计分箱数
-    QPushButton*    mpctrlBtnNeighborhood; // 邻域分析按钮
+    AntButton*      mpctrlBtnNeighborhood; // 邻域分析按钮
     QSpinBox*       mpctrlSpinNeighborhoodWindow; // 邻域窗口大小
-    QPushButton*    mpctrlBtnBuffer;      // 缓冲分析占位按钮
-    QPushButton*    mpctrlBtnOverlay;     // 叠加分析占位按钮
-    QPushButton*    mpctrlBtnSpatialQuery; // 空间查询占位按钮
-    QPushButton*    mpctrlBtnRasterCalc;  // 栅格计算占位按钮
-    QPushButton*    mpctrlBtnAttributeQuery; // 属性查询占位按钮
+    AntButton*      mpctrlBtnBuffer;      // 缓冲分析占位按钮
+    AntButton*      mpctrlBtnOverlay;     // 叠加分析占位按钮
+    AntButton*      mpctrlBtnSpatialQuery; // 空间查询占位按钮
+    AntButton*      mpctrlBtnRasterCalc;  // 栅格计算占位按钮
+    AntButton*      mpctrlBtnAttributeQuery; // 属性查询占位按钮
 
     QWidget*        mpctrlPageResults;    // Results 页
     QTextEdit*      mpctrlResultView;     // 文本结果区

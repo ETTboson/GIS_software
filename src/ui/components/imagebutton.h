@@ -173,9 +173,9 @@ private:
 
     // ── 外观参数 ──────────────────────────────────────
     bool     mbAutoScale;       // 是否将图片缩放到控件尺寸，默认 true
-    int      mnRadius;          // 圆角半径（像素），0 表示直角，默认 0
-    int      mnBorderWidth;     // 边框宽度（像素），0 表示不绘制，默认 0
-    QString  mstrBorderColor;   // 边框颜色字符串，如 "#333333"，默认空
+    int      mnRadius;          // 圆角半径（像素），0 表示直角，默认 8
+    int      mnBorderWidth;     // 边框宽度（像素），0 表示不绘制，默认 1
+    QString  mstrBorderColor;   // 边框颜色字符串，如 "#333333"，默认随状态变化
 };
 
 #endif // IMAGEBUTTON_H_D4E5F6A1B2C3

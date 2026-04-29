@@ -1,6 +1,7 @@
 #include "analysisworkspacedockwidget.h"
 
 #include "service/data/datarepository.h"
+#include "ui/components/antbutton.h"
 
 #include <QFormLayout>
 #include <QGroupBox>
@@ -9,7 +10,6 @@
 #include <QLayout>
 #include <QLayoutItem>
 #include <QListWidget>
-#include <QPushButton>
 #include <QSignalBlocker>
 #include <QSpinBox>
 #include <QSplitter>
@@ -30,16 +30,16 @@ AnalysisWorkspaceDockWidget::AnalysisWorkspaceDockWidget(QWidget* _pParent)
     , mpctrlAssetSummaryView(new QTextEdit(mpctrlPageData))
     , mpctrlPageTools(new QWidget(mpctrlTabWidget))
     , mpctrlLabelToolsHint(new QLabel(tr("请选择一个数据资产后，工具会按能力自动启用。"), mpctrlPageTools))
-    , mpctrlBtnBasicStatistics(new QPushButton(tr("运行基础统计"), mpctrlPageTools))
-    , mpctrlBtnFrequencyStatistics(new QPushButton(tr("运行频率统计"), mpctrlPageTools))
+    , mpctrlBtnBasicStatistics(new AntButton(tr("运行基础统计"), mpctrlPageTools))
+    , mpctrlBtnFrequencyStatistics(new AntButton(tr("运行频率统计"), mpctrlPageTools))
     , mpctrlSpinFrequencyBins(new QSpinBox(mpctrlPageTools))
-    , mpctrlBtnNeighborhood(new QPushButton(tr("运行邻域分析"), mpctrlPageTools))
+    , mpctrlBtnNeighborhood(new AntButton(tr("运行邻域分析"), mpctrlPageTools))
     , mpctrlSpinNeighborhoodWindow(new QSpinBox(mpctrlPageTools))
-    , mpctrlBtnBuffer(new QPushButton(tr("缓冲分析（开发中）"), mpctrlPageTools))
-    , mpctrlBtnOverlay(new QPushButton(tr("叠加分析（开发中）"), mpctrlPageTools))
-    , mpctrlBtnSpatialQuery(new QPushButton(tr("空间查询（开发中）"), mpctrlPageTools))
-    , mpctrlBtnRasterCalc(new QPushButton(tr("栅格计算（开发中）"), mpctrlPageTools))
-    , mpctrlBtnAttributeQuery(new QPushButton(tr("属性查询（即将支持）"), mpctrlPageTools))
+    , mpctrlBtnBuffer(new AntButton(tr("缓冲分析（开发中）"), mpctrlPageTools))
+    , mpctrlBtnOverlay(new AntButton(tr("叠加分析（开发中）"), mpctrlPageTools))
+    , mpctrlBtnSpatialQuery(new AntButton(tr("空间查询（开发中）"), mpctrlPageTools))
+    , mpctrlBtnRasterCalc(new AntButton(tr("栅格计算（开发中）"), mpctrlPageTools))
+    , mpctrlBtnAttributeQuery(new AntButton(tr("属性查询（即将支持）"), mpctrlPageTools))
     , mpctrlPageResults(new QWidget(mpctrlTabWidget))
     , mpctrlResultView(new QTextEdit(mpctrlPageResults))
     , mpctrlLabelChartTitle(new QLabel(tr("暂无可视化"), mpctrlPageResults))
@@ -85,6 +85,14 @@ AnalysisWorkspaceDockWidget::AnalysisWorkspaceDockWidget(QWidget* _pParent)
     mpctrlSpinNeighborhoodWindow->setRange(3, 15);
     mpctrlSpinNeighborhoodWindow->setSingleStep(2);
     mpctrlSpinNeighborhoodWindow->setValue(3);
+    mpctrlBtnBasicStatistics->setButtonRole(AntButton::Primary);
+    mpctrlBtnFrequencyStatistics->setButtonRole(AntButton::Default);
+    mpctrlBtnNeighborhood->setButtonRole(AntButton::Default);
+    mpctrlBtnBuffer->setButtonRole(AntButton::Quiet);
+    mpctrlBtnOverlay->setButtonRole(AntButton::Quiet);
+    mpctrlBtnSpatialQuery->setButtonRole(AntButton::Quiet);
+    mpctrlBtnRasterCalc->setButtonRole(AntButton::Quiet);
+    mpctrlBtnAttributeQuery->setButtonRole(AntButton::Default);
 
     QFormLayout* _pStatLayout = new QFormLayout();
     _pStatLayout->addRow(tr("基础统计"), mpctrlBtnBasicStatistics);

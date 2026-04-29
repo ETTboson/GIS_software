@@ -66,7 +66,10 @@ src/
     │   ├── aidockwidget.h/cpp         # AI 终端 Dock
     │   └── analysisworkspacedockwidget.h/cpp # 统一分析工作区 Dock，内含 Data / Tools / Results 三页
     ├── components/
+    │   ├── antbutton.h/cpp            # Qt5 兼容 Ant Design 风格按钮控件
     │   └── imagebutton.h/cpp          # 通用图像按钮控件
+    ├── theme/
+    │   └── antdesigntheme.h/cpp       # 应用级浅色 Ant Design 风格主题安装器
     ├── map/
     │   ├── mapcanvaswidget.h/cpp      # 单个地图画布封装，负责图层加入 QgsProject 与地图刷新
     │   └── mapcanvasmanager.h/cpp     # 多画布管理器
