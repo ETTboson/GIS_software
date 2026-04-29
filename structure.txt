@@ -1,4 +1,4 @@
-CMakeLists.txt                         # CMake 构建入口，注册 Qt/QGIS 依赖与源码文件
+CMakeLists.txt                         # CMake 构建入口，注册 Qt/QGIS/GDAL 依赖与源码文件
 rules.txt                              # 项目代码规范、命名规则与分层要求
 
 resources/
@@ -6,8 +6,8 @@ resources/
 └── mainwindow.ui                      # Qt Designer 生成的主窗口 UI 布局文件
 
 sample_data/
-├── sample_table.csv                   # 4x4 CSV 数值测试数据，适合验证基础统计与频率统计
-├── sample_raster.asc                  # 5x5 简单栅格测试数据，适合验证邻域分析
+├── sample_table.csv                   # CSV 数值测试数据，适合验证统计分析
+├── sample_raster.asc                  # 简单栅格测试数据，适合验证邻域分析
 └── README.txt                         # 测试数据说明与预期结果
 
 src/
@@ -15,53 +15,65 @@ src/
 │
 ├── model/                             # 纯数据结构层，不含业务逻辑
 │   ├── dto/
-│   │   ├── layerinfo.h                # 图层信息 DTO
+│   │   ├── analysisdataasset.h        # 统一分析资产 DTO，承载类型、能力集合与各类载荷
+│   │   ├── analysisresult.h           # 统一分析结果 DTO，补充 sourceAssetId/toolId
 │   │   ├── chatmessage.h              # AI 对话消息 DTO
-│   │   ├── analysisresult.h           # 分析结果 DTO
-│   │   ├── numericdataset.h           # 数值型数据集 DTO（CSV/简单栅格分析输入）
+│   │   ├── layerinfo.h                # 图层信息 DTO
+│   │   ├── metadatadocument.h         # XML 元数据文档载荷 DTO
+│   │   ├── numericdataset.h           # 统一数值视图 DTO，供统计/邻域分析共享
+│   │   ├── spatialrasterdata.h        # 栅格资产载荷 DTO
+│   │   ├── spatialvectordata.h        # 矢量资产载荷 DTO
+│   │   ├── tabulardata.h              # 表格资产载荷 DTO
 │   │   ├── visualizationdata.h        # 图表展示 DTO，承载标题、坐标轴与系列列表
 │   │   ├── visualizationseries.h      # 图表系列 DTO，承载系列名、颜色与数据点列表
 │   │   └── visualizationpoint.h       # 图表数据点 DTO，承载标签、数值与 tooltip 元信息
 │   ├── enums/
-│   │   ├── maptooltype.h              # 地图交互工具类型枚举
-│   │   └── visualizationcharttype.h   # 可视化图表类型枚举
-│
-├── core/                              # 基础核心层，负责 AI 编排、工作流与运行时集成
+│       ├── analysiscapability.h       # 分析能力位标志，统一描述 Statistical / Spatial / AttributeQuery
+│       ├── dataassettype.h            # 数据资产类型枚举，区分 Raster / Vector / Table / MetadataDocument
+│       ├── maptooltype.h              # 地图交互工具类型枚举
+│       └── visualizationcharttype.h   # 可视化图表类型枚举
+├── core/                              # 基础设施与编排层，不直接承载具体业务算法
 │   ├── ai/
-│   │   ├── aimanager.h/cpp            # AI 对话总协调层，负责普通链/分析状态更新链切换与 tool_call 兼容
+│   │   ├── aimanager.h/cpp            # AI 对话总协调层，负责普通链/分析状态更新链切换与 tool_call 分发
 │   │   ├── conversationcontext.h/cpp  # 对话上下文、历史压缩与 ET.md 记忆注入管理
-│   │   ├── ollamaclient.h/cpp         # 与 Ollama 的 HTTP 流式通信层，支持 NDJSON 半包缓冲与中断收尾
-│   │   ├── toolcalldispatcher.h/cpp   # AI 工具定义、参数校验与宿主桥接分发层
+│   │   ├── ollamaclient.h/cpp         # 与 Ollama 的 HTTP 流式通信层
+│   │   ├── toolcalldispatcher.h/cpp   # AI 工具定义、参数校验与宿主桥接分发层，仅暴露已实现能力
 │   │   └── memory/
-│   │       ├── systemcontextbuilder.h/cpp # AI system prompt 构建器，负责通用链与分析状态更新链提示词
+│   │       ├── systemcontextbuilder.h/cpp # AI system prompt 构建器，提示词已切到数据资产 + 能力模型
 │   │       └── memoryfilemanager.h/cpp    # ET.md / memory/*.md 记忆文件管理
 │   ├── workflow/
-│   │   └── analysisworkflowcoordinator.h/cpp # 分析工作流状态机，负责分析类型识别、缺参收集与内部状态更新
+│   │   └── analysisworkflowcoordinator.h/cpp # 分析工作流状态机，负责基础统计/频率统计/邻域分析补参
 │   ├── integration/
 │   │   └── qgsappinitializer.h/cpp    # QGIS 应用初始化/释放管理
 │   └── interfaces/
 │       └── iaitoolhost.h              # AI 宿主桥接接口，向 AI 暴露分析上下文与分析执行能力
 │
-├── service/                           # 业务逻辑层，负责数据读取与分析算法
+├── service/                           # 业务逻辑层，负责数据读取、资产组织与分析算法
 │   ├── data/
-│   │   ├── dataservice.h/cpp          # 数据加载入口，分发 CSV/简单栅格/GIS 文件解析
-│   │   └── numericdatareader.h/cpp    # 数值数据读取器，负责 CSV 与简单栅格文本解析
+│   │   ├── dataservice.h/cpp          # 数据入口服务，拆分 AddLayer 地图链路与 OpenData 分析链路
+│   │   ├── dataformatrouter.h/cpp     # 统一解析/路由层，按扩展名与内容产出统一分析资产
+│   │   ├── datarepository.h/cpp       # 统一分析资产仓库，维护资产列表与当前选择
+│   │   ├── csvinspector.h/cpp         # CSV 检查器，识别数值列、坐标列并支持表格转点资产
+│   │   ├── xmlinspector.h/cpp         # XML 检查器，识别坐标结构 XML 与元数据 XML
+│   │   └── numericdatareader.h/cpp    # 数值数据读取器，负责 CSV / 简单栅格 / 常规栅格第一波段解析
 │   └── analysis/
-│       └── analysisservice.h/cpp      # 数据分析引擎，提供基础统计、频率统计、邻域分析与 AI 工具桥接
-│
+│       ├── statisticalanalysisservice.h/cpp # 统计分析能力服务，统一接收数值视图执行基础统计与频率统计
+│       ├── spatialanalysisservice.h/cpp     # 空间分析能力服务，首期实现栅格邻域分析
+│       └── attributequeryservice.h/cpp      # 属性查询能力占位服务，统一返回“即将支持”结果
 └── ui/                                # 表现层，只负责交互与结果展示
-    ├── mainwindow.h/cpp               # 主窗口，组织数据加载、分析面板与结果展示
+    ├── mainwindow.h/cpp               # 主窗口，负责地图入口/分析入口分流、统一工作区编排与自动刷新
     ├── docks/
-    │   └── aidockwidget.h/cpp         # Claude Code CLI 风格 AI 终端 Dock
+    │   ├── aidockwidget.h/cpp         # AI 终端 Dock
+    │   └── analysisworkspacedockwidget.h/cpp # 统一分析工作区 Dock，内含 Data / Tools / Results 三页
     ├── components/
     │   └── imagebutton.h/cpp          # 通用图像按钮控件
     ├── map/
-    │   ├── mapcanvaswidget.h/cpp      # 单个地图画布封装
+    │   ├── mapcanvaswidget.h/cpp      # 单个地图画布封装，负责图层加入 QgsProject 与地图刷新
     │   └── mapcanvasmanager.h/cpp     # 多画布管理器
     └── visualization/
-        ├── visualizationdockwidget.h/cpp # 可视化结果 Dock，承载占位页、图表页与详情区
-        ├── visualizationmanager.h/cpp # 可视化协调器，负责 AnalysisResult 到图表控件的分发刷新
+        ├── visualizationmanager.h/cpp # 可视化协调器，负责 AnalysisResult 到工作区结果页图表的分发刷新
+        ├── visualizationdockwidget.h/cpp # 旧独立可视化 Dock 原型，当前已退出主编译链
         └── charts/
             ├── chartwidget.h/cpp      # 图表基类，统一处理 DTO 绑定、悬停 tooltip 与点击选中
-            ├── barchartwidget.h/cpp   # 柱状图控件，负责基础统计与频率统计展示
+            ├── barchartwidget.h/cpp   # 柱状图控件，负责统计结果展示
             └── linechartwidget.h/cpp  # 折线图控件，负责邻域分析行趋势展示

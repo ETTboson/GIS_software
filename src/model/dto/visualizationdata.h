@@ -11,7 +11,7 @@
 // ════════════════════════════════════════════════════════
 //  VisualizationData
 //  图表展示 DTO
-//  由 AnalysisService 生成，经由 AnalysisResult 传递到 UI 可视化层
+//  由统计分析服务或空间分析服务生成，经由 AnalysisResult 传递到 UI 可视化层
 // ════════════════════════════════════════════════════════
 struct VisualizationData
 {

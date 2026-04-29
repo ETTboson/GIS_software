@@ -4,6 +4,8 @@
 #include "core/interfaces/iaitoolhost.h"
 #include "core/ai/memory/memoryfilemanager.h"
 
+#include <QStringList>
+
 ToolCallDispatcher::ToolCallDispatcher(QObject* _pParent)
     : QObject(_pParent)
     , mpConversationContext(nullptr)
@@ -29,10 +31,9 @@ void ToolCallDispatcher::dispatch(const QString& _strName,
 
     if (_strName == "get_analysis_context") {
         executeGetAnalysisContext();
-    } else if (_strName == "run_buffer_analysis"
-        || _strName == "run_overlay_analysis"
-        || _strName == "run_spatial_query"
-        || _strName == "run_raster_calc") {
+    } else if (_strName == "run_basic_statistics"
+        || _strName == "run_frequency_statistics"
+        || _strName == "run_neighborhood_analysis") {
         executeAnalysisTool(_strName, _jsonArgs);
     } else if (_strName == "save_memory") {
         executeSaveMemory(_jsonArgs);
@@ -54,7 +55,7 @@ QJsonArray ToolCallDispatcher::buildToolsDefinition() const
 
         QJsonObject _fn;
         _fn["name"] = "get_analysis_context";
-        _fn["description"] = "读取当前分析上下文，包括是否已加载可分析数据、数据集尺寸与已加载图层列表。";
+        _fn["description"] = "读取当前分析上下文，包括当前选中资产、能力集合、数值视图与已加载地图图层。";
         _fn["parameters"] = _params;
 
         QJsonObject _tool;
@@ -64,21 +65,13 @@ QJsonArray ToolCallDispatcher::buildToolsDefinition() const
     }
 
     {
-        QJsonObject _radiusProp;
-        _radiusProp["type"] = "number";
-        _radiusProp["description"] = "缓冲区半径，单位米";
-
-        QJsonObject _properties;
-        _properties["radius_meters"] = _radiusProp;
-
         QJsonObject _params;
         _params["type"] = "object";
-        _params["properties"] = _properties;
-        _params["required"] = QJsonArray{ "radius_meters" };
+        _params["properties"] = QJsonObject();
 
         QJsonObject _fn;
-        _fn["name"] = "run_buffer_analysis";
-        _fn["description"] = "执行缓冲分析。";
+        _fn["name"] = "run_basic_statistics";
+        _fn["description"] = "对当前选中资产的统一数值视图执行基础统计分析。";
         _fn["parameters"] = _params;
 
         QJsonObject _tool;
@@ -88,22 +81,21 @@ QJsonArray ToolCallDispatcher::buildToolsDefinition() const
     }
 
     {
-        QJsonObject _typeProp;
-        _typeProp["type"] = "string";
-        _typeProp["description"] = "叠加类型：intersection、union、difference";
-        _typeProp["enum"] = QJsonArray{ "intersection", "union", "difference" };
+        QJsonObject _binProp;
+        _binProp["type"] = "integer";
+        _binProp["description"] = "频率统计分箱数，必须大于等于 2";
 
         QJsonObject _properties;
-        _properties["overlay_type"] = _typeProp;
+        _properties["bin_count"] = _binProp;
 
         QJsonObject _params;
         _params["type"] = "object";
         _params["properties"] = _properties;
-        _params["required"] = QJsonArray{ "overlay_type" };
+        _params["required"] = QJsonArray{ "bin_count" };
 
         QJsonObject _fn;
-        _fn["name"] = "run_overlay_analysis";
-        _fn["description"] = "执行叠加分析。";
+        _fn["name"] = "run_frequency_statistics";
+        _fn["description"] = "对当前选中资产的统一数值视图执行频率统计分析。";
         _fn["parameters"] = _params;
 
         QJsonObject _tool;
@@ -113,45 +105,21 @@ QJsonArray ToolCallDispatcher::buildToolsDefinition() const
     }
 
     {
-        QJsonObject _exprProp;
-        _exprProp["type"] = "string";
-        _exprProp["description"] = "空间查询表达式";
+        QJsonObject _windowProp;
+        _windowProp["type"] = "integer";
+        _windowProp["description"] = "邻域窗口大小，必须是不小于 3 的奇数";
 
         QJsonObject _properties;
-        _properties["query_expression"] = _exprProp;
+        _properties["window_size"] = _windowProp;
 
         QJsonObject _params;
         _params["type"] = "object";
         _params["properties"] = _properties;
-        _params["required"] = QJsonArray{ "query_expression" };
+        _params["required"] = QJsonArray{ "window_size" };
 
         QJsonObject _fn;
-        _fn["name"] = "run_spatial_query";
-        _fn["description"] = "执行空间查询分析。";
-        _fn["parameters"] = _params;
-
-        QJsonObject _tool;
-        _tool["type"] = "function";
-        _tool["function"] = _fn;
-        _jsonTools.append(_tool);
-    }
-
-    {
-        QJsonObject _exprProp;
-        _exprProp["type"] = "string";
-        _exprProp["description"] = "栅格计算表达式";
-
-        QJsonObject _properties;
-        _properties["expression"] = _exprProp;
-
-        QJsonObject _params;
-        _params["type"] = "object";
-        _params["properties"] = _properties;
-        _params["required"] = QJsonArray{ "expression" };
-
-        QJsonObject _fn;
-        _fn["name"] = "run_raster_calc";
-        _fn["description"] = "执行栅格计算分析。";
+        _fn["name"] = "run_neighborhood_analysis";
+        _fn["description"] = "对当前选中栅格资产执行邻域分析。";
         _fn["parameters"] = _params;
 
         QJsonObject _tool;
@@ -243,28 +211,16 @@ void ToolCallDispatcher::executeAnalysisTool(const QString& _strToolName,
 
     QString _strError;
     QString _strResult;
-    if (_strToolName == "run_buffer_analysis") {
-        const double _dRadius = _jsonArgs["radius_meters"].toDouble(0.0);
-        if (_dRadius <= 0.0) {
-            emit toolFailed(_strToolName, tr("参数错误：缓冲半径必须大于 0"));
+    if (_strToolName == "run_frequency_statistics") {
+        const int _nBinCount = _jsonArgs["bin_count"].toInt(0);
+        if (_nBinCount < 2) {
+            emit toolFailed(_strToolName, tr("参数错误：bin_count 必须大于等于 2"));
             return;
         }
-    } else if (_strToolName == "run_overlay_analysis") {
-        const QString _strOverlayType = _jsonArgs["overlay_type"].toString().trimmed();
-        if (_strOverlayType.isEmpty()) {
-            emit toolFailed(_strToolName, tr("参数错误：叠加类型不能为空"));
-            return;
-        }
-    } else if (_strToolName == "run_spatial_query") {
-        const QString _strExpression = _jsonArgs["query_expression"].toString().trimmed();
-        if (_strExpression.isEmpty()) {
-            emit toolFailed(_strToolName, tr("参数错误：查询表达式不能为空"));
-            return;
-        }
-    } else if (_strToolName == "run_raster_calc") {
-        const QString _strExpression = _jsonArgs["expression"].toString().trimmed();
-        if (_strExpression.isEmpty()) {
-            emit toolFailed(_strToolName, tr("参数错误：计算表达式不能为空"));
+    } else if (_strToolName == "run_neighborhood_analysis") {
+        const int _nWindowSize = _jsonArgs["window_size"].toInt(0);
+        if (_nWindowSize < 3 || (_nWindowSize % 2) == 0) {
+            emit toolFailed(_strToolName, tr("参数错误：window_size 必须是不小于 3 的奇数"));
             return;
         }
     }
@@ -331,22 +287,47 @@ QString ToolCallDispatcher::formatAnalysisContext(const QJsonObject& _jsonContex
 {
     QStringList _vLines;
     _vLines << QString::fromUtf8("当前分析上下文");
-    _vLines << QString::fromUtf8("可分析数值数据：%1")
-        .arg(_jsonContext["has_numeric_data"].toBool() ? "是" : "否");
+    _vLines << QString::fromUtf8("当前是否存在已选择资产：%1")
+        .arg(_jsonContext["has_current_asset"].toBool() ? "是" : "否");
 
-    const QString _strReadyPath = _jsonContext["ready_data_path"].toString().trimmed();
-    if (!_strReadyPath.isEmpty()) {
-        _vLines << QString::fromUtf8("当前数据路径：%1").arg(_strReadyPath);
+    const QJsonObject _jsonCurrentAsset = _jsonContext["current_asset"].toObject();
+    if (!_jsonCurrentAsset.isEmpty()) {
+        QStringList _vCapabilityNames;
+        for (const QJsonValue& _jsonVal : _jsonCurrentAsset["capabilities"].toArray()) {
+            _vCapabilityNames << _jsonVal.toString();
+        }
+        _vLines << QString::fromUtf8("当前资产名称：%1")
+            .arg(_jsonCurrentAsset["name"].toString());
+        _vLines << QString::fromUtf8("资产类型：%1")
+            .arg(_jsonCurrentAsset["asset_type"].toString());
+        _vLines << QString::fromUtf8("源格式：%1")
+            .arg(_jsonCurrentAsset["source_format"].toString());
+        _vLines << QString::fromUtf8("源路径：%1")
+            .arg(_jsonCurrentAsset["source_path"].toString());
+        _vLines << QString::fromUtf8("能力集合：%1")
+            .arg(_vCapabilityNames.isEmpty()
+                ? QString::fromUtf8("无")
+                : _vCapabilityNames.join(", "));
+        _vLines << QString::fromUtf8("可分析数值视图：%1")
+            .arg(_jsonCurrentAsset["has_numeric_data"].toBool() ? "是" : "否");
+        if (_jsonCurrentAsset["has_numeric_data"].toBool()) {
+            _vLines << QString::fromUtf8("数值视图尺寸：%1 行 × %2 列")
+                .arg(_jsonCurrentAsset["numeric_rows"].toInt())
+                .arg(_jsonCurrentAsset["numeric_cols"].toInt());
+        }
+        const QString _strSummary = _jsonCurrentAsset["summary"].toString().trimmed();
+        if (!_strSummary.isEmpty()) {
+            _vLines << QString::fromUtf8("资产摘要：%1").arg(_strSummary);
+        }
     }
 
-    const QString _strDatasetName = _jsonContext["dataset_name"].toString().trimmed();
-    if (!_strDatasetName.isEmpty()) {
-        _vLines << QString::fromUtf8("数据集名称：%1").arg(_strDatasetName);
-        _vLines << QString::fromUtf8("数据格式：%1")
-            .arg(_jsonContext["dataset_format"].toString());
-        _vLines << QString::fromUtf8("数据尺寸：%1 行 × %2 列")
-            .arg(_jsonContext["dataset_rows"].toInt())
-            .arg(_jsonContext["dataset_cols"].toInt());
+    const QJsonArray _jsonAssets = _jsonContext["assets"].toArray();
+    _vLines << QString::fromUtf8("分析资产数量：%1").arg(_jsonAssets.size());
+    for (const QJsonValue& _jsonVal : _jsonAssets) {
+        const QJsonObject _jsonAsset = _jsonVal.toObject();
+        _vLines << QString::fromUtf8("- %1 (%2)")
+            .arg(_jsonAsset["name"].toString(),
+                _jsonAsset["asset_type"].toString());
     }
 
     const QJsonArray _jsonLayers = _jsonContext["layers"].toArray();

@@ -1,35 +1,38 @@
 #ifndef MAINWINDOW_H_A1B2C3D4E5F6
 #define MAINWINDOW_H_A1B2C3D4E5F6
 
-#include <QMainWindow>
-#include <QLabel>
-#include <QDockWidget>
 #include <QJsonObject>
-#include <QTreeWidget>
-#include <QTextEdit>
-#include <QTableView>
+#include <QMainWindow>
+#include <QMap>
+#include <QPoint>
 
 #include <qgslayertreeview.h>
 
-#include "model/dto/layerinfo.h"
-#include "model/dto/analysisresult.h"
-#include "model/dto/numericdataset.h"
-#include "model/enums/maptooltype.h"
 #include "core/interfaces/iaitoolhost.h"
+#include "model/dto/analysisdataasset.h"
+#include "model/dto/analysisresult.h"
+#include "model/dto/layerinfo.h"
+#include "model/enums/dataassettype.h"
+#include "model/enums/maptooltype.h"
 
-class DataService;
-class AnalysisService;
 class AIManager;
-class ImageButton;
 class AIDockWidget;
+class QAction;
+class AnalysisWorkspaceDockWidget;
+class AttributeQueryService;
+class DataRepository;
+class DataService;
+class ImageButton;
+class QLabel;
 class MapCanvasManager;
 class MapCanvasWidget;
+class QDockWidget;
+class QTableView;
+class QTextEdit;
+class QgsMapLayer;
+class SpatialAnalysisService;
+class StatisticalAnalysisService;
 class VisualizationManager;
-class VisualizationDockWidget;
-class QAction;
-class QComboBox;
-class QSpinBox;
-class QPushButton;
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -38,8 +41,8 @@ QT_END_NAMESPACE
 // ════════════════════════════════════════════════════════
 //  MainWindow
 //  职责：应用主窗口与 UI 总装配层。
-//        负责组织 Ribbon、地图区域、Dock 面板以及 service/core 模块，
-//        同时作为 IAIToolHost 把当前程序的分析能力桥接给 AI 模块。
+//        负责组织 Ribbon、地图区域、统一分析工作区、AI Dock 与日志面板，
+//        并作为 IAIToolHost 将当前分析资产与已实现分析能力桥接给 AI 模块。
 //  位于 ui/ 根层，只负责交互编排与展示，不直接承载算法实现。
 // ════════════════════════════════════════════════════════
 class MainWindow : public QMainWindow, public IAIToolHost
@@ -76,6 +79,13 @@ public:
         QString& _strError) override;
 
 private:
+    struct AnalysisRunConfig
+    {
+        QString strToolId;            // 工具标识
+        int     nFrequencyBins = 10;  // 频率统计分箱数
+        int     nNeighborhoodWindow = 3; // 邻域窗口大小
+    };
+
     void initModules();
     void initRibbonButtons();
     void initDockWidgets();
@@ -85,42 +95,27 @@ private:
     void createLayerDock();
     void createAIDock();
     void createAttributeDock();
-    void createAnalysisDock();
-    void createVisualizationDock();
+    void createAnalysisWorkspaceDock();
     void createLogDock();
-    void ensureVisualizationMenuAction();
-
     /*
-     * @brief 根据当前界面选择执行一次数据分析
+     * @brief 初始化图层树右键菜单行为
      */
-    void runSelectedAnalysis();
-
+    void initLayerTreeContextMenu();
+    void ensureWorkspaceVisible();
     /*
-     * @brief 按指定参数执行分析
-     * @param_1 _nMethodIdx: 分析方法索引
-     * @param_2 _nFrequencyBins: 频率统计分箱数
-     * @param_3 _nNeighborhoodWindow: 邻域窗口大小
-     * @param_4 _bSyncWidgets: 是否同步界面控件状态
+     * @brief 返回图层树中当前选中的图层对象
      */
-    void runAnalysisByConfig(int _nMethodIdx,
-        int _nFrequencyBins,
-        int _nNeighborhoodWindow,
-        bool _bSyncWidgets);
-
-    /*
-     * @brief 根据分析方法更新参数控件可用状态
-     */
-    void updateAnalysisParameterWidgets();
-
-    /*
-     * @brief 缓存当前待执行分析配置
-     * @param_1 _nMethodIdx: 分析方法索引
-     * @param_2 _nFrequencyBins: 频率统计分箱数
-     * @param_3 _nNeighborhoodWindow: 邻域窗口大小
-     */
-    void cachePendingAnalysisConfig(int _nMethodIdx,
-        int _nFrequencyBins,
-        int _nNeighborhoodWindow);
+    QgsMapLayer* currentSelectedLayer() const;
+    DataAssetType resolveAssetChoice(const AnalysisDataAsset& _assetInput);
+    void openToolShortcut(const QString& _strToolId);
+    bool assetSupportsTool(const AnalysisDataAsset& _assetInput,
+        const QString& _strToolId) const;
+    void runToolForCurrentAsset(const AnalysisRunConfig& _configRun);
+    void runToolForAsset(const AnalysisDataAsset& _assetInput,
+        const AnalysisRunConfig& _configRun);
+    void cachePendingRun(const QString& _strAssetId,
+        const AnalysisRunConfig& _configRun);
+    void clearPendingRun();
 
 private slots:
     void onOpenData();
@@ -138,8 +133,8 @@ private slots:
     void onAIAnalyze();
     void onAIChat();
     void onAbout();
-    void onDataLoaded(const LayerInfo& _layerInfo);
-    void onNumericDataLoaded(const NumericDataset& _dataSet);
+    void onLayerLoaded(const LayerInfo& _layerInfo);
+    void onAnalysisAssetReady(const AnalysisDataAsset& _assetReady);
     void onDataLoadFailed(const QString& _strErrorMsg);
     void onAnalysisFinished(const AnalysisResult& _result);
     void onAnalysisFailed(const AnalysisResult& _result);
@@ -147,55 +142,53 @@ private slots:
     void onCoordChanged(double _dLon, double _dLat);
     void onScaleChanged(double _dScale);
     void onActiveCanvasChanged(MapCanvasWidget* _pCanvas);
-
+    void onCurrentAnalysisAssetChanged(const AnalysisDataAsset& _assetCurrent);
+    void onCurrentAnalysisAssetCleared();
     /*
-     * @brief 分析方法切换时更新参数区
-     * @param_1 _nIndex: 当前选中方法索引
+     * @brief 响应图层树右键菜单请求
+     * @param_1 _posMenu: 右键菜单在图层树视图坐标系中的位置
      */
-    void onAnalysisMethodChanged(int _nIndex);
-
+    void onLayerTreeContextMenuRequested(const QPoint& _posMenu);
     /*
-     * @brief 用户点击“执行分析”按钮时触发
+     * @brief 移除图层树当前选中的图层
      */
-    void onRunAnalysisClicked();
+    void onRemoveSelectedLayer();
+    /*
+     * @brief 将活动画布缩放到当前选中图层范围
+     */
+    void onZoomToSelectedLayer();
+    void onBasicStatisticsRequested();
+    void onFrequencyStatisticsRequested(int _nFrequencyBins);
+    void onNeighborhoodAnalysisRequested(int _nNeighborhoodWindow);
+    void onAttributeQueryRequested();
 
 private:
-    Ui::MainWindow* mpUI;
-    DataService* mpDataService;
-    AnalysisService* mpAnalysisService;
-    AIManager* mpAIManager;
-    MapCanvasManager* mpMapCanvasManager;
-    QDockWidget* mpctrlDockLayer;
-    AIDockWidget* mpctrlDockAI;
-    QDockWidget* mpctrlDockAttribute;
-    QDockWidget* mpctrlDockAnalysis;
-    QDockWidget* mpctrlDockLog;
-    VisualizationDockWidget* mpctrlDockVisualization;
-    QAction* mpctrlActionToggleVisualizationPanel;
-    QgsLayerTreeView* mpctrlLayerTreeView;
-    QTableView* mpctrlAttrTable;
-    QTextEdit* mpctrlLogView;
-    QLabel* mpctrlLabelCoord;
-    QLabel* mpctrlLabelScale;
-    QLabel* mpctrlLabelStatus;
+    Ui::MainWindow*              mpUI;
+    DataService*                 mpDataService;
+    DataRepository*              mpDataRepository;
+    StatisticalAnalysisService*  mpStatisticalAnalysisService;
+    SpatialAnalysisService*      mpSpatialAnalysisService;
+    AttributeQueryService*       mpAttributeQueryService;
+    AIManager*                   mpAIManager;
+    MapCanvasManager*            mpMapCanvasManager;
+    QDockWidget*                 mpctrlDockLayer;
+    AIDockWidget*                mpctrlDockAI;
+    QDockWidget*                 mpctrlDockAttribute;
+    AnalysisWorkspaceDockWidget* mpctrlDockAnalysisWorkspace;
+    QDockWidget*                 mpctrlDockLog;
+    QgsLayerTreeView*            mpctrlLayerTreeView;
+    QTableView*                  mpctrlAttrTable;
+    QTextEdit*                   mpctrlLogView;
+    QLabel*                      mpctrlLabelCoord;
+    QLabel*                      mpctrlLabelScale;
+    QLabel*                      mpctrlLabelStatus;
+    VisualizationManager*        mpVisualizationManager;
 
-    QLabel* mpctrlLabelAnalysisData;          // 当前可分析数据提示
-    QComboBox* mpctrlComboAnalysisMethod;     // 分析方法下拉框
-    QSpinBox* mpctrlSpinFrequencyBins;        // 频率统计分箱数
-    QSpinBox* mpctrlSpinNeighborhoodWindow;   // 邻域分析窗口大小
-    QPushButton* mpctrlBtnRunAnalysis;        // 执行分析按钮
-    QTextEdit* mpctrlAnalysisResultView;      // 分析结果展示区
-    VisualizationManager* mpVisualizationManager; // 可视化协调器
-
-    bool mbHasPendingAnalysisConfig;          // 当前是否存在待提交的分析配置
-    int mnPendingAnalysisMethodIdx;           // 待提交的分析方法索引
-    int mnPendingFrequencyBins;               // 待提交的频率统计分箱数
-    int mnPendingNeighborhoodWindow;          // 待提交的邻域窗口大小
-
-    bool mbHasLastSuccessfulAnalysis;         // 当前是否缓存了最近一次成功分析配置
-    int mnLastAnalysisMethodIdx;              // 最近一次成功分析的方法索引
-    int mnLastFrequencyBins;                  // 最近一次成功分析的频率统计分箱数
-    int mnLastNeighborhoodWindow;             // 最近一次成功分析的邻域窗口大小
+    bool                         mbHasPendingRun;          // 当前是否存在待确认的运行配置
+    QString                      mstrPendingRunAssetId;    // 待确认运行配置对应的资产 ID
+    AnalysisRunConfig            mConfigPendingRun;        // 待确认运行配置
+    QMap<QString, AnalysisRunConfig> mmapLastSuccessfulRuns; // 按资产缓存的最近成功分析配置
+    QString                      mstrDisplayedResultAssetId; // 当前结果区正在显示的资产 ID
 };
 
 #endif // MAINWINDOW_H_A1B2C3D4E5F6

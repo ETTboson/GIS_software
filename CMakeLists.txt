@@ -2,9 +2,9 @@ cmake_minimum_required(VERSION 3.20)
 
 # 以下第三方库当前未随仓库一起管理，因此这些路径仍需要开发者在本机配置为绝对路径。
 # 为了支持多人协作，这里只保留少量根目录变量，避免在源码中硬编码多处机器相关路径。
-set(OSGEO4W_ROOT "" CACHE PATH "OSGeo4W 安装根目录，例如 D:/path/to/OSGeo4W")
-set(LOG4CPP_ROOT "" CACHE PATH "log4cpp 安装根目录，例如 D:/path/to/log4cpp-1.1.4")
-set(LIBXML2_ROOT "" CACHE PATH "libxml2 安装根目录，例如 D:/path/to/libxml2")
+set(OSGEO4W_ROOT "D:/OSGeo4W" CACHE PATH "OSGeo4W 安装根目录")
+set(LOG4CPP_ROOT "D:/OOP_2026/log4cpp-1.1.4" CACHE PATH "log4cpp 安装根目录")
+set(LIBXML2_ROOT "D:/OOP_2026/libxml2" CACHE PATH "libxml2 安装根目录")
 
 foreach(_required_root IN ITEMS OSGEO4W_ROOT LOG4CPP_ROOT LIBXML2_ROOT)
     if(NOT DEFINED ${_required_root} OR "${${_required_root}}" STREQUAL "")
@@ -62,33 +62,52 @@ add_executable(FirstQT
     src/core/interfaces/iaitoolhost.h
 
     src/model/dto/analysisresult.h
+    src/model/dto/analysisdataasset.h
     src/model/dto/chatmessage.h
     src/model/dto/layerinfo.h
+    src/model/dto/metadatadocument.h
     src/model/dto/numericdataset.h
+    src/model/dto/spatialrasterdata.h
+    src/model/dto/spatialvectordata.h
+    src/model/dto/tabulardata.h
     src/model/dto/visualizationdata.h
     src/model/dto/visualizationpoint.h
     src/model/dto/visualizationseries.h
+    src/model/enums/analysiscapability.h
+    src/model/enums/dataassettype.h
     src/model/enums/maptooltype.h
     src/model/enums/visualizationcharttype.h
-    src/service/analysis/analysisservice.cpp
-    src/service/analysis/analysisservice.h
+    src/service/analysis/attributequeryservice.cpp
+    src/service/analysis/attributequeryservice.h
+    src/service/analysis/spatialanalysisservice.cpp
+    src/service/analysis/spatialanalysisservice.h
+    src/service/analysis/statisticalanalysisservice.cpp
+    src/service/analysis/statisticalanalysisservice.h
+    src/service/data/csvinspector.cpp
+    src/service/data/csvinspector.h
+    src/service/data/dataformatrouter.cpp
+    src/service/data/dataformatrouter.h
+    src/service/data/datarepository.cpp
+    src/service/data/datarepository.h
     src/service/data/dataservice.cpp
     src/service/data/dataservice.h
     src/service/data/numericdatareader.cpp
     src/service/data/numericdatareader.h
+    src/service/data/xmlinspector.cpp
+    src/service/data/xmlinspector.h
 
     src/ui/mainwindow.cpp
     src/ui/mainwindow.h
     src/ui/docks/aidockwidget.cpp
     src/ui/docks/aidockwidget.h
+    src/ui/docks/analysisworkspacedockwidget.cpp
+    src/ui/docks/analysisworkspacedockwidget.h
     src/ui/components/imagebutton.cpp
     src/ui/components/imagebutton.h
     src/ui/map/mapcanvaswidget.cpp
     src/ui/map/mapcanvaswidget.h
     src/ui/map/mapcanvasmanager.cpp
     src/ui/map/mapcanvasmanager.h
-    src/ui/visualization/visualizationdockwidget.cpp
-    src/ui/visualization/visualizationdockwidget.h
     src/ui/visualization/visualizationmanager.cpp
     src/ui/visualization/visualizationmanager.h
     src/ui/visualization/charts/chartwidget.cpp

@@ -1,21 +1,22 @@
 #include "visualizationmanager.h"
 
-#include "ui/visualization/visualizationdockwidget.h"
+#include "ui/docks/analysisworkspacedockwidget.h"
 #include "ui/visualization/charts/barchartwidget.h"
 #include "ui/visualization/charts/linechartwidget.h"
 
 VisualizationManager::VisualizationManager(QObject* _pParent)
     : QObject(_pParent)
-    , mpDockWidget(nullptr)
+    , mpWorkspaceDock(nullptr)
     , mpctrlBarChartWidget(nullptr)
     , mpctrlLineChartWidget(nullptr)
 {
 }
 
-void VisualizationManager::attachDock(VisualizationDockWidget* _pDockWidget)
+void VisualizationManager::attachWorkspace(
+    AnalysisWorkspaceDockWidget* _pWorkspaceDock)
 {
-    mpDockWidget = _pDockWidget;
-    if (mpDockWidget == nullptr) {
+    mpWorkspaceDock = _pWorkspaceDock;
+    if (mpWorkspaceDock == nullptr) {
         return;
     }
 
@@ -31,14 +32,16 @@ void VisualizationManager::attachDock(VisualizationDockWidget* _pDockWidget)
             this, &VisualizationManager::onPointSelected);
     }
 
-    mpDockWidget->setChartWidget(VisualizationChartType::BarChart, mpctrlBarChartWidget);
-    mpDockWidget->setChartWidget(VisualizationChartType::LineChart, mpctrlLineChartWidget);
+    mpWorkspaceDock->setChartWidget(
+        VisualizationChartType::BarChart, mpctrlBarChartWidget);
+    mpWorkspaceDock->setChartWidget(
+        VisualizationChartType::LineChart, mpctrlLineChartWidget);
     clearView(tr("请先加载数据并执行分析。"));
 }
 
 void VisualizationManager::updateFromResult(const AnalysisResult& _result)
 {
-    if (mpDockWidget == nullptr) {
+    if (mpWorkspaceDock == nullptr) {
         return;
     }
 
@@ -58,11 +61,10 @@ void VisualizationManager::updateFromResult(const AnalysisResult& _result)
         mpctrlLineChartWidget->setVisualizationData(_result.dataVisualization);
     }
 
-    mpDockWidget->showChart(
+    mpWorkspaceDock->showChart(
         _result.dataVisualization.chartTypeSuggested,
         _result.dataVisualization.strTitle);
-    mpDockWidget->setDetailText(buildSummaryText(_result));
-    mpDockWidget->setVisible(true);
+    mpWorkspaceDock->setVisualizationDetailText(buildSummaryText(_result));
 }
 
 void VisualizationManager::clearView(const QString& _strMessage)
@@ -76,25 +78,25 @@ void VisualizationManager::clearView(const QString& _strMessage)
         mpctrlLineChartWidget->clearVisualization();
     }
 
-    if (mpDockWidget != nullptr) {
+    if (mpWorkspaceDock != nullptr) {
         const QString _strPlaceholder = _strMessage.isEmpty()
             ? tr("请先加载数据并执行分析。")
             : _strMessage;
         const QString _strDetailText = _strMessage.isEmpty()
             ? tr("可视化结果详情将在这里显示。")
             : _strMessage;
-        mpDockWidget->showPlaceholder(_strPlaceholder);
-        mpDockWidget->setDetailText(_strDetailText);
+        mpWorkspaceDock->showVisualizationPlaceholder(_strPlaceholder);
+        mpWorkspaceDock->setVisualizationDetailText(_strDetailText);
     }
 }
 
 void VisualizationManager::onPointSelected(const VisualizationPoint& _point)
 {
-    if (mpDockWidget == nullptr) {
+    if (mpWorkspaceDock == nullptr) {
         return;
     }
 
-    mpDockWidget->setDetailText(buildPointDetailText(_point));
+    mpWorkspaceDock->setVisualizationDetailText(buildPointDetailText(_point));
 }
 
 QString VisualizationManager::buildSummaryText(const AnalysisResult& _result) const

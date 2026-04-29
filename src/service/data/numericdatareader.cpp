@@ -1,6 +1,8 @@
 // src/service/numericdatareader.cpp
 #include "numericdatareader.h"
 
+#include <gdal_priv.h>
+
 #include <QFile>
 #include <QFileInfo>
 #include <QRegularExpression>
@@ -141,6 +143,84 @@ bool NumericDataReader::readSimpleRasterFile(const QString& _strFilePath,
     }
 
     fillDataSet(_strFilePath, "simple_raster", _vvRows, _outDataSet);
+    return true;
+}
+
+bool NumericDataReader::readRasterFile(const QString& _strFilePath,
+    NumericDataset& _outDataSet,
+    int* _pnBandCount,
+    bool* _pbHasNoData,
+    double* _pdNoDataValue,
+    QString& _strError)
+{
+    GDALAllRegister();
+
+    GDALDataset* _poDataset = static_cast<GDALDataset*>(
+        GDALOpen(_strFilePath.toUtf8().constData(), GA_ReadOnly));
+    if (_poDataset == nullptr) {
+        _strError = QString::fromUtf8("无法打开栅格文件：%1").arg(_strFilePath);
+        return false;
+    }
+
+    const int _nRasterXSize = _poDataset->GetRasterXSize();
+    const int _nRasterYSize = _poDataset->GetRasterYSize();
+    const int _nBandCount = _poDataset->GetRasterCount();
+    if (_pnBandCount != nullptr) {
+        *_pnBandCount = _nBandCount;
+    }
+
+    if (_nRasterXSize <= 0 || _nRasterYSize <= 0 || _nBandCount <= 0) {
+        _strError = QString::fromUtf8("栅格文件缺少有效波段或尺寸信息：%1")
+            .arg(_strFilePath);
+        GDALClose(_poDataset);
+        return false;
+    }
+
+    GDALRasterBand* _poBand = _poDataset->GetRasterBand(1);
+    if (_poBand == nullptr) {
+        _strError = QString::fromUtf8("无法读取第一波段：%1").arg(_strFilePath);
+        GDALClose(_poDataset);
+        return false;
+    }
+
+    int _nHasNoData = FALSE;
+    const double _dNoDataValue = _poBand->GetNoDataValue(&_nHasNoData);
+    if (_pbHasNoData != nullptr) {
+        *_pbHasNoData = (_nHasNoData != FALSE);
+    }
+    if (_pdNoDataValue != nullptr) {
+        *_pdNoDataValue = _dNoDataValue;
+    }
+
+    QVector<double> _vdValues;
+    _vdValues.resize(_nRasterXSize * _nRasterYSize);
+    CPLErr _eReadStatus = _poBand->RasterIO(
+        GF_Read,
+        0,
+        0,
+        _nRasterXSize,
+        _nRasterYSize,
+        _vdValues.data(),
+        _nRasterXSize,
+        _nRasterYSize,
+        GDT_Float64,
+        0,
+        0);
+    if (_eReadStatus != CE_None) {
+        _strError = QString::fromUtf8("读取栅格像元失败：%1").arg(_strFilePath);
+        GDALClose(_poDataset);
+        return false;
+    }
+
+    _outDataSet = NumericDataset();
+    _outDataSet.strSourcePath = _strFilePath;
+    _outDataSet.strName = QFileInfo(_strFilePath).fileName();
+    _outDataSet.strFormat = QFileInfo(_strFilePath).suffix().toLower();
+    _outDataSet.nRows = _nRasterYSize;
+    _outDataSet.nCols = _nRasterXSize;
+    _outDataSet.vdValues = _vdValues;
+
+    GDALClose(_poDataset);
     return true;
 }
 

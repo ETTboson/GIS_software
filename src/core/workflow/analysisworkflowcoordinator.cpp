@@ -13,14 +13,12 @@ QString analysisTaskTypeToString(
     AnalysisWorkflowCoordinator::AnalysisTaskType _type)
 {
     switch (_type) {
-    case AnalysisWorkflowCoordinator::AnalysisTaskType::Buffer:
-        return QString::fromUtf8("缓冲分析");
-    case AnalysisWorkflowCoordinator::AnalysisTaskType::Overlay:
-        return QString::fromUtf8("叠加分析");
-    case AnalysisWorkflowCoordinator::AnalysisTaskType::SpatialQuery:
-        return QString::fromUtf8("空间查询");
-    case AnalysisWorkflowCoordinator::AnalysisTaskType::RasterCalc:
-        return QString::fromUtf8("栅格计算");
+    case AnalysisWorkflowCoordinator::AnalysisTaskType::BasicStatistics:
+        return QString::fromUtf8("基础统计");
+    case AnalysisWorkflowCoordinator::AnalysisTaskType::FrequencyStatistics:
+        return QString::fromUtf8("频率统计");
+    case AnalysisWorkflowCoordinator::AnalysisTaskType::NeighborhoodAnalysis:
+        return QString::fromUtf8("邻域分析");
     case AnalysisWorkflowCoordinator::AnalysisTaskType::None:
     default:
         return QString::fromUtf8("未确定");
@@ -90,10 +88,9 @@ QString AnalysisWorkflowCoordinator::buildDeterministicReply() const
     if (mState.type == AnalysisTaskType::None) {
         return QString::fromUtf8(
             "请选择一个选项：\n"
-            "1. 缓冲分析\n"
-            "2. 叠加分析\n"
-            "3. 空间查询\n"
-            "4. 栅格计算");
+            "1. 基础统计\n"
+            "2. 频率统计\n"
+            "3. 邻域分析");
     }
 
     return buildNeedMoreInfoReply();
@@ -120,35 +117,21 @@ QJsonArray AnalysisWorkflowCoordinator::buildStateUpdateToolsDefinition() const
         QJsonObject _toolNameProp;
         _toolNameProp["type"] = "string";
         _toolNameProp["enum"] = QJsonArray{
-            "run_buffer_analysis",
-            "run_overlay_analysis",
-            "run_spatial_query",
-            "run_raster_calc"
+            "run_basic_statistics",
+            "run_frequency_statistics",
+            "run_neighborhood_analysis"
         };
 
-        QJsonObject _radiusProp;
-        _radiusProp["type"] = "number";
+        QJsonObject _binProp;
+        _binProp["type"] = "integer";
 
-        QJsonObject _overlayProp;
-        _overlayProp["type"] = "string";
-        _overlayProp["enum"] = QJsonArray{
-            "intersection",
-            "union",
-            "difference"
-        };
-
-        QJsonObject _queryProp;
-        _queryProp["type"] = "string";
-
-        QJsonObject _expressionProp;
-        _expressionProp["type"] = "string";
+        QJsonObject _windowProp;
+        _windowProp["type"] = "integer";
 
         QJsonObject _properties;
         _properties["tool_name"] = _toolNameProp;
-        _properties["radius_meters"] = _radiusProp;
-        _properties["overlay_type"] = _overlayProp;
-        _properties["query_expression"] = _queryProp;
-        _properties["expression"] = _expressionProp;
+        _properties["bin_count"] = _binProp;
+        _properties["window_size"] = _windowProp;
 
         QJsonObject _params;
         _params["type"] = "object";
@@ -261,17 +244,14 @@ bool AnalysisWorkflowCoordinator::tryApplyLocalStateUpdate(
     const AnalysisTaskType _type = detectTaskType(_strUserText);
     if (_type != AnalysisTaskType::None) {
         switch (_type) {
-        case AnalysisTaskType::Buffer:
-            _jsonArgs["tool_name"] = "run_buffer_analysis";
+        case AnalysisTaskType::BasicStatistics:
+            _jsonArgs["tool_name"] = "run_basic_statistics";
             break;
-        case AnalysisTaskType::Overlay:
-            _jsonArgs["tool_name"] = "run_overlay_analysis";
+        case AnalysisTaskType::FrequencyStatistics:
+            _jsonArgs["tool_name"] = "run_frequency_statistics";
             break;
-        case AnalysisTaskType::SpatialQuery:
-            _jsonArgs["tool_name"] = "run_spatial_query";
-            break;
-        case AnalysisTaskType::RasterCalc:
-            _jsonArgs["tool_name"] = "run_raster_calc";
+        case AnalysisTaskType::NeighborhoodAnalysis:
+            _jsonArgs["tool_name"] = "run_neighborhood_analysis";
             break;
         case AnalysisTaskType::None:
         default:
@@ -279,24 +259,14 @@ bool AnalysisWorkflowCoordinator::tryApplyLocalStateUpdate(
         }
     }
 
-    double _dRadiusMeters = 0.0;
-    if (tryExtractRadiusMeters(_strUserText, _dRadiusMeters)) {
-        _jsonArgs["radius_meters"] = _dRadiusMeters;
+    int _nBinCount = 0;
+    if (tryExtractBinCount(_strUserText, _nBinCount)) {
+        _jsonArgs["bin_count"] = _nBinCount;
     }
 
-    const QString _strOverlayType = normalizeOverlayType(_strUserText);
-    if (!_strOverlayType.isEmpty()) {
-        _jsonArgs["overlay_type"] = _strOverlayType;
-    }
-
-    QString _strQueryExpression;
-    if (tryExtractQueryExpression(_strUserText, _strQueryExpression)) {
-        _jsonArgs["query_expression"] = _strQueryExpression;
-    }
-
-    QString _strRasterExpression;
-    if (tryExtractRasterExpression(_strUserText, _strRasterExpression)) {
-        _jsonArgs["expression"] = _strRasterExpression;
+    int _nWindowSize = 0;
+    if (tryExtractWindowSize(_strUserText, _nWindowSize)) {
+        _jsonArgs["window_size"] = _nWindowSize;
     }
 
     if (_jsonArgs.isEmpty()) {
@@ -319,24 +289,16 @@ void AnalysisWorkflowCoordinator::recalculateMissingParams()
 {
     mState.vMissingParams.clear();
     switch (mState.type) {
-    case AnalysisTaskType::Buffer:
-        if (!mState.bHasRadius) {
-            mState.vMissingParams << "radius_meters";
+    case AnalysisTaskType::BasicStatistics:
+        break;
+    case AnalysisTaskType::FrequencyStatistics:
+        if (!mState.bHasBinCount) {
+            mState.vMissingParams << "bin_count";
         }
         break;
-    case AnalysisTaskType::Overlay:
-        if (mState.strOverlayType.trimmed().isEmpty()) {
-            mState.vMissingParams << "overlay_type";
-        }
-        break;
-    case AnalysisTaskType::SpatialQuery:
-        if (mState.strQueryExpression.trimmed().isEmpty()) {
-            mState.vMissingParams << "query_expression";
-        }
-        break;
-    case AnalysisTaskType::RasterCalc:
-        if (mState.strRasterExpression.trimmed().isEmpty()) {
-            mState.vMissingParams << "expression";
+    case AnalysisTaskType::NeighborhoodAnalysis:
+        if (!mState.bHasWindowSize) {
+            mState.vMissingParams << "window_size";
         }
         break;
     case AnalysisTaskType::None:
@@ -356,14 +318,10 @@ AnalysisWorkflowCoordinator::buildExecutionTransition() const
 
     _result.kind = TransitionKind::ExecuteTool;
     _result.strToolName = currentToolName();
-    if (_result.strToolName == "run_buffer_analysis") {
-        _result.jsonToolArgs["radius_meters"] = mState.dRadiusMeters;
-    } else if (_result.strToolName == "run_overlay_analysis") {
-        _result.jsonToolArgs["overlay_type"] = mState.strOverlayType;
-    } else if (_result.strToolName == "run_spatial_query") {
-        _result.jsonToolArgs["query_expression"] = mState.strQueryExpression;
-    } else if (_result.strToolName == "run_raster_calc") {
-        _result.jsonToolArgs["expression"] = mState.strRasterExpression;
+    if (_result.strToolName == "run_frequency_statistics") {
+        _result.jsonToolArgs["bin_count"] = mState.nBinCount;
+    } else if (_result.strToolName == "run_neighborhood_analysis") {
+        _result.jsonToolArgs["window_size"] = mState.nWindowSize;
     }
     return _result;
 }
@@ -373,38 +331,29 @@ AnalysisWorkflowCoordinator::applyStateUpdateArgs(const QJsonObject& _jsonArgs)
 {
     if (_jsonArgs.contains("tool_name")) {
         const QString _strToolName = _jsonArgs["tool_name"].toString().trimmed();
-        if (_strToolName == "run_buffer_analysis") {
-            mState.type = AnalysisTaskType::Buffer;
-        } else if (_strToolName == "run_overlay_analysis") {
-            mState.type = AnalysisTaskType::Overlay;
-        } else if (_strToolName == "run_spatial_query") {
-            mState.type = AnalysisTaskType::SpatialQuery;
-        } else if (_strToolName == "run_raster_calc") {
-            mState.type = AnalysisTaskType::RasterCalc;
+        if (_strToolName == "run_basic_statistics") {
+            mState.type = AnalysisTaskType::BasicStatistics;
+        } else if (_strToolName == "run_frequency_statistics") {
+            mState.type = AnalysisTaskType::FrequencyStatistics;
+        } else if (_strToolName == "run_neighborhood_analysis") {
+            mState.type = AnalysisTaskType::NeighborhoodAnalysis;
         }
     }
 
-    if (_jsonArgs.contains("radius_meters")) {
-        const double _dRadiusMeters = _jsonArgs["radius_meters"].toDouble(0.0);
-        if (_dRadiusMeters > 0.0) {
-            mState.bHasRadius = true;
-            mState.dRadiusMeters = _dRadiusMeters;
+    if (_jsonArgs.contains("bin_count")) {
+        const int _nBinCount = _jsonArgs["bin_count"].toInt(0);
+        if (_nBinCount >= 2) {
+            mState.bHasBinCount = true;
+            mState.nBinCount = _nBinCount;
         }
     }
 
-    if (_jsonArgs.contains("overlay_type")) {
-        mState.strOverlayType = normalizeOverlayType(
-            _jsonArgs["overlay_type"].toString());
-    }
-
-    if (_jsonArgs.contains("query_expression")) {
-        mState.strQueryExpression = normalizeExpression(
-            _jsonArgs["query_expression"].toString());
-    }
-
-    if (_jsonArgs.contains("expression")) {
-        mState.strRasterExpression = normalizeExpression(
-            _jsonArgs["expression"].toString());
+    if (_jsonArgs.contains("window_size")) {
+        const int _nWindowSize = _jsonArgs["window_size"].toInt(0);
+        if (_nWindowSize >= 3 && (_nWindowSize % 2) == 1) {
+            mState.bHasWindowSize = true;
+            mState.nWindowSize = _nWindowSize;
+        }
     }
 
     recalculateMissingParams();
@@ -464,20 +413,11 @@ QString AnalysisWorkflowCoordinator::buildCollectedParamLines() const
     QStringList _vLines;
     _vLines << QString::fromUtf8("  分析类型：%1")
         .arg(analysisTaskTypeToString(mState.type));
-    if (mState.bHasRadius) {
-        _vLines << QString::fromUtf8("  缓冲半径：%1 米")
-            .arg(mState.dRadiusMeters, 0, 'f', 2);
+    if (mState.bHasBinCount) {
+        _vLines << QString::fromUtf8("  分箱数：%1").arg(mState.nBinCount);
     }
-    if (!mState.strOverlayType.isEmpty()) {
-        _vLines << QString::fromUtf8("  叠加类型：%1").arg(mState.strOverlayType);
-    }
-    if (!mState.strQueryExpression.isEmpty()) {
-        _vLines << QString::fromUtf8("  查询表达式：%1")
-            .arg(mState.strQueryExpression);
-    }
-    if (!mState.strRasterExpression.isEmpty()) {
-        _vLines << QString::fromUtf8("  栅格表达式：%1")
-            .arg(mState.strRasterExpression);
+    if (mState.bHasWindowSize) {
+        _vLines << QString::fromUtf8("  邻域窗口：%1").arg(mState.nWindowSize);
     }
     return _vLines.join("\n");
 }
@@ -487,15 +427,11 @@ QString AnalysisWorkflowCoordinator::buildMissingParamLines() const
     QStringList _vLines;
     for (const QString& _strParam : mState.vMissingParams) {
         if (_strParam == "task_type") {
-            _vLines << QString::fromUtf8("分析类型：例如 缓冲分析 / 叠加分析 / 空间查询 / 栅格计算");
-        } else if (_strParam == "radius_meters") {
-            _vLines << QString::fromUtf8("缓冲半径：例如 500 米");
-        } else if (_strParam == "overlay_type") {
-            _vLines << QString::fromUtf8("叠加类型：例如 intersection、union、difference");
-        } else if (_strParam == "query_expression") {
-            _vLines << QString::fromUtf8("查询表达式：例如 population > 1000");
-        } else if (_strParam == "expression") {
-            _vLines << QString::fromUtf8("栅格表达式：例如 (A + B) / 2");
+            _vLines << QString::fromUtf8("分析类型：例如 基础统计 / 频率统计 / 邻域分析");
+        } else if (_strParam == "bin_count") {
+            _vLines << QString::fromUtf8("分箱数：例如 10");
+        } else if (_strParam == "window_size") {
+            _vLines << QString::fromUtf8("邻域窗口：例如 3 或 5");
         }
     }
 
@@ -508,45 +444,16 @@ QString AnalysisWorkflowCoordinator::buildMissingParamLines() const
 QString AnalysisWorkflowCoordinator::currentToolName() const
 {
     switch (mState.type) {
-    case AnalysisTaskType::Buffer:
-        return "run_buffer_analysis";
-    case AnalysisTaskType::Overlay:
-        return "run_overlay_analysis";
-    case AnalysisTaskType::SpatialQuery:
-        return "run_spatial_query";
-    case AnalysisTaskType::RasterCalc:
-        return "run_raster_calc";
+    case AnalysisTaskType::BasicStatistics:
+        return "run_basic_statistics";
+    case AnalysisTaskType::FrequencyStatistics:
+        return "run_frequency_statistics";
+    case AnalysisTaskType::NeighborhoodAnalysis:
+        return "run_neighborhood_analysis";
     case AnalysisTaskType::None:
     default:
         return QString();
     }
-}
-
-QString AnalysisWorkflowCoordinator::normalizeOverlayType(const QString& _strValue)
-{
-    const QString _strText = _strValue.trimmed().toLower();
-    if (_strText.contains(QString::fromUtf8("交集"))
-        || _strText.contains("intersection")) {
-        return "intersection";
-    }
-    if (_strText.contains(QString::fromUtf8("并集"))
-        || _strText.contains("union")) {
-        return "union";
-    }
-    if (_strText.contains(QString::fromUtf8("差集"))
-        || _strText.contains("difference")) {
-        return "difference";
-    }
-    return QString();
-}
-
-QString AnalysisWorkflowCoordinator::normalizeExpression(const QString& _strValue)
-{
-    QString _strText = _strValue.trimmed();
-    if (_strText.startsWith('"') && _strText.endsWith('"') && _strText.length() > 1) {
-        _strText = _strText.mid(1, _strText.length() - 2).trimmed();
-    }
-    return _strText;
 }
 
 bool AnalysisWorkflowCoordinator::isCancelText(const QString& _strText)
@@ -572,15 +479,14 @@ bool AnalysisWorkflowCoordinator::looksLikeStateUpdateInput(
     if (detectTaskType(_strText) != AnalysisTaskType::None) {
         return true;
     }
-    if (normalizeOverlayType(_strText).length() > 0) {
+    if (_strText.contains(QString::fromUtf8("分箱"))
+        || _strText.contains("bin", Qt::CaseInsensitive)
+        || _strText.contains(QString::fromUtf8("窗口"))
+        || _strText.contains("window", Qt::CaseInsensitive)) {
         return true;
     }
-    if (_strText.contains(QString::fromUtf8("半径"))
-        || _strText.contains("radius", Qt::CaseInsensitive)
-        || _strText.contains(QString::fromUtf8("表达式"))
-        || _strText.contains("=")
-        || _strText.contains(">")
-        || _strText.contains("<")) {
+    if (!_strText.trimmed().isEmpty()
+        && QRegularExpression("^\\d+$").match(_strText.trimmed()).hasMatch()) {
         return true;
     }
     return false;
@@ -590,84 +496,50 @@ AnalysisWorkflowCoordinator::AnalysisTaskType
 AnalysisWorkflowCoordinator::detectTaskType(const QString& _strUserText)
 {
     const QString _strText = _strUserText.toLower();
-    if (_strText.contains(QString::fromUtf8("栅格计算"))
-        || _strText.contains("raster")) {
-        return AnalysisTaskType::RasterCalc;
+    if (_strText.contains(QString::fromUtf8("邻域"))
+        || _strText.contains("neighborhood")) {
+        return AnalysisTaskType::NeighborhoodAnalysis;
     }
-    if (_strText.contains(QString::fromUtf8("空间查询"))
-        || _strText.contains("spatial query")) {
-        return AnalysisTaskType::SpatialQuery;
+    if (_strText.contains(QString::fromUtf8("频率"))
+        || _strText.contains(QString::fromUtf8("直方"))
+        || _strText.contains("frequency")) {
+        return AnalysisTaskType::FrequencyStatistics;
     }
-    if (_strText.contains(QString::fromUtf8("叠加"))
-        || _strText.contains(QString::fromUtf8("并集"))
-        || _strText.contains(QString::fromUtf8("交集"))
-        || _strText.contains(QString::fromUtf8("差集"))
-        || _strText.contains("overlay")
-        || _strText.contains("union")
-        || _strText.contains("intersection")
-        || _strText.contains("difference")) {
-        return AnalysisTaskType::Overlay;
-    }
-    if (_strText.contains(QString::fromUtf8("缓冲"))
-        || _strText.contains("buffer")) {
-        return AnalysisTaskType::Buffer;
-    }
-    if (_strText.contains(QString::fromUtf8("查询表达式"))
-        || _strText.contains(QString::fromUtf8("查询条件"))) {
-        return AnalysisTaskType::SpatialQuery;
+    if (_strText.contains(QString::fromUtf8("基础统计"))
+        || _strText.contains(QString::fromUtf8("统计摘要"))
+        || _strText.contains(QString::fromUtf8("最小值"))
+        || _strText.contains("basic statistics")) {
+        return AnalysisTaskType::BasicStatistics;
     }
     return AnalysisTaskType::None;
 }
 
-bool AnalysisWorkflowCoordinator::tryExtractRadiusMeters(
-    const QString& _strText,
-    double& _dRadiusMeters)
+bool AnalysisWorkflowCoordinator::tryExtractBinCount(const QString& _strText,
+    int& _nBinCount)
 {
-    static const QRegularExpression S_RE_RADIUS(
-        R"((?:半径|radius)[^0-9]{0,8}(\d+(?:\.\d+)?))",
+    static const QRegularExpression S_RE_BIN(
+        R"((?:分箱数|分箱|bin(?:_count)?)\D{0,6}(\d+))",
         QRegularExpression::CaseInsensitiveOption);
-    const QRegularExpressionMatch _match = S_RE_RADIUS.match(_strText);
+    const QRegularExpressionMatch _match = S_RE_BIN.match(_strText);
     if (!_match.hasMatch()) {
         return false;
     }
 
-    _dRadiusMeters = _match.captured(1).toDouble();
-    return _dRadiusMeters > 0.0;
+    _nBinCount = _match.captured(1).toInt();
+    return _nBinCount >= 2;
 }
 
-bool AnalysisWorkflowCoordinator::tryExtractQueryExpression(
-    const QString& _strText,
-    QString& _strExpression)
+bool AnalysisWorkflowCoordinator::tryExtractWindowSize(const QString& _strText,
+    int& _nWindowSize)
 {
-    static const QRegularExpression S_RE_EXPR(
-        R"((?:查询表达式|查询条件|expression)\s*[:：=]?\s*(.+)$)",
+    static const QRegularExpression S_RE_WINDOW(
+        R"((?:窗口大小|邻域窗口|窗口|window(?:_size)?)\D{0,6}(\d+))",
         QRegularExpression::CaseInsensitiveOption);
-    QRegularExpressionMatch _match = S_RE_EXPR.match(_strText.trimmed());
-    if (_match.hasMatch()) {
-        _strExpression = normalizeExpression(_match.captured(1));
-        return !_strExpression.isEmpty();
-    }
-
-    if (_strText.contains("=") || _strText.contains(">")
-        || _strText.contains("<")) {
-        _strExpression = normalizeExpression(_strText.trimmed());
-        return !_strExpression.isEmpty();
-    }
-    return false;
-}
-
-bool AnalysisWorkflowCoordinator::tryExtractRasterExpression(
-    const QString& _strText,
-    QString& _strExpression)
-{
-    static const QRegularExpression S_RE_EXPR(
-        R"((?:栅格表达式|栅格计算表达式|表达式|expression)\s*[:：=]?\s*(.+)$)",
-        QRegularExpression::CaseInsensitiveOption);
-    const QRegularExpressionMatch _match = S_RE_EXPR.match(_strText.trimmed());
+    const QRegularExpressionMatch _match = S_RE_WINDOW.match(_strText);
     if (!_match.hasMatch()) {
         return false;
     }
 
-    _strExpression = normalizeExpression(_match.captured(1));
-    return !_strExpression.isEmpty();
+    _nWindowSize = _match.captured(1).toInt();
+    return _nWindowSize >= 3 && (_nWindowSize % 2) == 1;
 }

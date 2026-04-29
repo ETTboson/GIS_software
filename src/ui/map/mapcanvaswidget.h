@@ -95,6 +95,12 @@ public slots:
     void zoomToFullExtent();
 
     /*
+     * @brief 缩放画布到指定图层的范围
+     * @param_1 _strLayerId: 目标图层的 QGIS 图层 ID
+     */
+    void zoomToLayerExtent(const QString& _strLayerId);
+
+    /*
      * @brief 按照给定 ID 顺序重新排列画布图层（列表首项在最上层渲染）
      * @param_1 _vstrLayerIds: 图层 ID 有序列表
      */

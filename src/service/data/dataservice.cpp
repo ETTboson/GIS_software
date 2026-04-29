@@ -1,10 +1,10 @@
 // src/service/dataservice.cpp
 #include "dataservice.h"
 
-#include "numericdatareader.h"
+#include "dataformatrouter.h"
 
-#include <QFileInfo>
 #include <QDebug>
+#include <QFileInfo>
 
 DataService::DataService(QObject* _pParent)
     : QObject(_pParent)
@@ -15,7 +15,7 @@ DataService::~DataService()
 {
 }
 
-void DataService::loadData(const QString& _strFilePath)
+void DataService::loadLayerToMap(const QString& _strFilePath)
 {
     if (_strFilePath.isEmpty()) {
         emit dataLoadFailed(tr("文件路径为空"));
@@ -24,22 +24,22 @@ void DataService::loadData(const QString& _strFilePath)
 
     const QFileInfo _fiInfo(_strFilePath);
     const QString _strExt = _fiInfo.suffix().toLower();
+    if (!DataFormatRouter::canLoadAsMapLayer(_strFilePath)) {
+        emit dataLoadFailed(tr("添加图层仅支持矢量/栅格图层格式：%1").arg(_strExt));
+        return;
+    }
+
     bool _bSuccess = false;
     QString _strError;
-    NumericDataset _dataSet;
 
     if (_strExt == "shp") {
         _bSuccess = parseShapefile(_strFilePath);
-    } else if (_strExt == "tif" || _strExt == "tiff") {
+    } else if (_strExt == "tif" || _strExt == "tiff" || _strExt == "img") {
         _bSuccess = parseGeoTiff(_strFilePath);
     } else if (_strExt == "geojson") {
         _bSuccess = parseGeoJson(_strFilePath);
-    } else if (_strExt == "csv") {
-        _bSuccess = parseCsv(_strFilePath, _dataSet, _strError);
-    } else if (_strExt == "asc" || _strExt == "txt") {
-        _bSuccess = parseSimpleRaster(_strFilePath, _dataSet, _strError);
     } else {
-        emit dataLoadFailed(tr("不支持的格式: %1").arg(_strExt));
+        emit dataLoadFailed(tr("当前不支持的地图图层格式：%1").arg(_strExt));
         return;
     }
 
@@ -52,11 +52,28 @@ void DataService::loadData(const QString& _strFilePath)
 
     const LayerInfo _layerInfo = buildLayerInfo(_strFilePath);
     mvLayers.append(_layerInfo);
-    emit dataLoaded(_layerInfo);
+    emit layerLoaded(_layerInfo);
+}
 
-    if (_strExt == "csv" || _strExt == "asc" || _strExt == "txt") {
-        emit numericDataLoaded(_dataSet);
+void DataService::openDataForAnalysis(const QString& _strFilePath)
+{
+    AnalysisDataAsset _assetReady;
+    QString _strError;
+    if (!DataFormatRouter::routeAnalysisInput(_strFilePath, _assetReady, _strError)) {
+        emit dataLoadFailed(_strError);
+        return;
     }
+
+    emit analysisAssetReady(_assetReady);
+}
+
+bool DataService::buildAlternateAsset(const AnalysisDataAsset& _assetInput,
+    DataAssetType _eTargetType,
+    AnalysisDataAsset& _outAsset,
+    QString& _strError) const
+{
+    return DataFormatRouter::buildAlternateAsset(
+        _assetInput, _eTargetType, _outAsset, _strError);
 }
 
 void DataService::clearAllLayers()
@@ -67,6 +84,26 @@ void DataService::clearAllLayers()
 QList<LayerInfo> DataService::getLayers() const
 {
     return mvLayers;
+}
+
+void DataService::removeLayerRecord(const QString& _strFilePath,
+    const QString& _strLayerName)
+{
+    const QString _strNormalizedPath = QFileInfo(_strFilePath).absoluteFilePath();
+    for (int _nLayerIdx = 0; _nLayerIdx < mvLayers.size(); ++_nLayerIdx) {
+        const LayerInfo& _layerInfoCurrent = mvLayers.at(_nLayerIdx);
+        const QString _strStoredPath =
+            QFileInfo(_layerInfoCurrent.strFilePath).absoluteFilePath();
+        const bool _bPathMatched =
+            (_strStoredPath == _strNormalizedPath)
+            || _strFilePath.startsWith(_layerInfoCurrent.strFilePath)
+            || _layerInfoCurrent.strFilePath.startsWith(_strFilePath);
+        if (_bPathMatched
+            && _layerInfoCurrent.strName == _strLayerName) {
+            mvLayers.removeAt(_nLayerIdx);
+            return;
+        }
+    }
 }
 
 bool DataService::parseShapefile(const QString& _strFilePath)
@@ -87,30 +124,14 @@ bool DataService::parseGeoJson(const QString& _strFilePath)
     return true;
 }
 
-bool DataService::parseCsv(const QString& _strFilePath, NumericDataset& _outDataSet,
-    QString& _strError)
-{
-    return NumericDataReader::readCsvFile(_strFilePath, _outDataSet, _strError);
-}
-
-bool DataService::parseSimpleRaster(const QString& _strFilePath,
-    NumericDataset& _outDataSet, QString& _strError)
-{
-    return NumericDataReader::readSimpleRasterFile(_strFilePath, _outDataSet, _strError);
-}
-
 LayerInfo DataService::buildLayerInfo(const QString& _strFilePath) const
 {
     const QFileInfo _fiInfo(_strFilePath);
     const QString _strExt = _fiInfo.suffix().toLower();
 
     QString _strType = "vector";
-    if (_strExt == "tif" || _strExt == "tiff") {
+    if (_strExt == "tif" || _strExt == "tiff" || _strExt == "img") {
         _strType = "raster";
-    } else if (_strExt == "csv") {
-        _strType = "table";
-    } else if (_strExt == "asc" || _strExt == "txt") {
-        _strType = "simple_raster";
     }
 
     LayerInfo _layerInfo;

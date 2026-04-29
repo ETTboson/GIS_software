@@ -11,7 +11,7 @@ class IAIToolHost;
 // ════════════════════════════════════════════════════════
 //  AnalysisWorkflowCoordinator
 //  职责：维护分析工作流状态机。
-//        负责识别分析类型、收集缺失参数、构建状态更新请求，
+//        负责识别当前分析任务、收集缺失参数、构建状态更新请求，
 //        并在参数完整后给出执行转移。
 //  位于 core/workflow/ 层，与具体 UI 解耦。
 // ════════════════════════════════════════════════════════
@@ -21,10 +21,9 @@ public:
     enum class AnalysisTaskType
     {
         None,
-        Buffer,
-        Overlay,
-        SpatialQuery,
-        RasterCalc
+        BasicStatistics,
+        FrequencyStatistics,
+        NeighborhoodAnalysis
     };
 
     enum class AnalysisTurnKind
@@ -140,11 +139,10 @@ private:
     {
         AnalysisTaskType type = AnalysisTaskType::None; // 当前分析任务类型
         bool bActive = false;                           // 是否处于分析工作流
-        bool bHasRadius = false;                        // 是否已有缓冲半径
-        double dRadiusMeters = 0.0;                     // 缓冲半径参数
-        QString strOverlayType;                         // 叠加分析类型
-        QString strQueryExpression;                     // 空间查询表达式
-        QString strRasterExpression;                    // 栅格计算表达式
+        bool bHasBinCount = false;                      // 是否已有频率统计分箱数
+        int nBinCount = 10;                             // 频率统计分箱数
+        bool bHasWindowSize = false;                    // 是否已有邻域窗口大小
+        int nWindowSize = 3;                            // 邻域窗口大小
         QStringList vMissingParams;                     // 当前缺失参数列表
         QString strLastError;                           // 最近错误文本
     };
@@ -159,18 +157,12 @@ private:
     QString buildCollectedParamLines() const;
     QString buildMissingParamLines() const;
     QString currentToolName() const;
-    static QString normalizeOverlayType(const QString& _strValue);
-    static QString normalizeExpression(const QString& _strValue);
     static bool isCancelText(const QString& _strText);
     static bool isCapabilityIntent(const QString& _strText);
     bool looksLikeStateUpdateInput(const QString& _strText) const;
     static AnalysisTaskType detectTaskType(const QString& _strUserText);
-    static bool tryExtractRadiusMeters(const QString& _strText,
-        double& _dRadiusMeters);
-    static bool tryExtractQueryExpression(const QString& _strText,
-        QString& _strExpression);
-    static bool tryExtractRasterExpression(const QString& _strText,
-        QString& _strExpression);
+    static bool tryExtractBinCount(const QString& _strText, int& _nBinCount);
+    static bool tryExtractWindowSize(const QString& _strText, int& _nWindowSize);
 
     AnalysisWorkflowState mState; // 当前分析工作流状态
     IAIToolHost*          mpToolHost = nullptr; // 宿主桥接接口

@@ -4,16 +4,16 @@
 
 #include <QObject>
 #include <QString>
-#include <QStringList>
 
+#include "model/dto/analysisdataasset.h"
 #include "model/dto/layerinfo.h"
-#include "model/dto/numericdataset.h"
+#include "model/enums/dataassettype.h"
 
 // ════════════════════════════════════════════════════════
 //  DataService
-//  职责：统一处理空间数据与数值数据的加载入口。
-//        负责根据文件类型分发解析流程，维护已加载图层清单，
-//        并把可分析的 NumericDataset 通过信号发给分析层。
+//  职责：统一处理地图图层入口与分析数据入口。
+//        AddLayer 只负责地图图层链路，OpenData 只负责分析资产链路，
+//        并向 MainWindow 发出统一分析资产 DTO。
 //  位于 service/data/ 层，不持有任何 UI 对象。
 // ════════════════════════════════════════════════════════
 class DataService : public QObject
@@ -33,11 +33,28 @@ public:
     ~DataService() override;
 
     /*
-     * @brief 根据文件路径加载数据
-     *        支持 GIS 文件与数值分析文件
+     * @brief 把空间图层加载请求送入地图链路
+     * @param_1 _strFilePath: 图层文件的本地绝对路径
+     */
+    void loadLayerToMap(const QString& _strFilePath);
+
+    /*
+     * @brief 把数据文件送入分析链路
      * @param_1 _strFilePath: 数据文件的本地绝对路径
      */
-    void loadData(const QString& _strFilePath);
+    void openDataForAnalysis(const QString& _strFilePath);
+
+    /*
+     * @brief 为需要二次确认的资产生成备用类型资产
+     * @param_1 _assetInput: 原始分析资产
+     * @param_2 _eTargetType: 目标资产类型
+     * @param_3 _outAsset: 成功时写出的目标资产 DTO
+     * @param_4 _strError: 失败时写出的错误信息
+     */
+    bool buildAlternateAsset(const AnalysisDataAsset& _assetInput,
+        DataAssetType _eTargetType,
+        AnalysisDataAsset& _outAsset,
+        QString& _strError) const;
 
     /*
      * @brief 清空所有已加载图层记录
@@ -49,18 +66,26 @@ public:
      */
     QList<LayerInfo> getLayers() const;
 
+    /*
+     * @brief 按文件路径与名称移除一条图层记录
+     * @param_1 _strFilePath: 图层源文件路径
+     * @param_2 _strLayerName: 图层显示名称
+     */
+    void removeLayerRecord(const QString& _strFilePath,
+        const QString& _strLayerName);
+
 signals:
     /*
-     * @brief 数据加载成功时触发
+     * @brief 地图图层入口加载成功时触发
      * @param_1 _layerInfo: 加载成功的图层元信息 DTO
      */
-    void dataLoaded(const LayerInfo& _layerInfo);
+    void layerLoaded(const LayerInfo& _layerInfo);
 
     /*
-     * @brief 数值数据加载成功时触发
-     * @param_1 _dataSet: 可直接用于分析的数值型数据集 DTO
+     * @brief 分析资产入口识别成功时触发
+     * @param_1 _assetReady: 统一解析后的分析资产 DTO
      */
-    void numericDataLoaded(const NumericDataset& _dataSet);
+    void analysisAssetReady(const AnalysisDataAsset& _assetReady);
 
     /*
      * @brief 数据加载失败时触发
@@ -85,23 +110,11 @@ private:
     bool parseGeoJson(const QString& _strFilePath);
 
     /*
-     * @brief 解析 CSV 数值文件
-     */
-    bool parseCsv(const QString& _strFilePath, NumericDataset& _outDataSet,
-        QString& _strError);
-
-    /*
-     * @brief 解析简单栅格文本文件
-     */
-    bool parseSimpleRaster(const QString& _strFilePath, NumericDataset& _outDataSet,
-        QString& _strError);
-
-    /*
      * @brief 根据文件路径构造 LayerInfo DTO
      */
     LayerInfo buildLayerInfo(const QString& _strFilePath) const;
 
-    QList<LayerInfo> mvLayers;
+    QList<LayerInfo> mvLayers; // 当前地图图层列表
 };
 
 #endif // DATASERVICE_H_B2C3D4E5F6A1

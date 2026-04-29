@@ -10,7 +10,7 @@
 //  NumericDataset
 //  数值型数据集 DTO
 //  纯数据结构，不含业务逻辑
-//  在 DataService、AnalysisService、MainWindow 之间传递
+//  在数据解析层、能力分析服务与 MainWindow/AI 上下文之间传递
 // ════════════════════════════════════════════════════════
 struct NumericDataset
 {

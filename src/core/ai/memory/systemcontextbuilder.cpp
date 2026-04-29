@@ -67,7 +67,7 @@ QString SystemContextBuilder::buildToolPolicyBlock() const
         "工具调用规范\n\n"
         "可用工具分为三类：上下文工具、分析工具、记忆工具。\n"
         "1. 只读工具可直接调用：get_analysis_context、search_memory\n"
-        "2. 分析工具需要参数完整后再调用：run_buffer_analysis、run_overlay_analysis、run_spatial_query、run_raster_calc\n"
+        "2. 分析工具需要参数完整后再调用：run_basic_statistics、run_frequency_statistics、run_neighborhood_analysis\n"
         "3. save_memory 只有在用户明确要求“记住”某些规则、偏好或项目事实时再调用\n"
         "4. 工具执行失败时，解释失败原因并给出下一步建议\n"
         "5. 不要把工具调用 JSON 直接输出给用户");
@@ -88,11 +88,9 @@ QString SystemContextBuilder::buildOutputStyleBlock() const
         "3. ...\n"
         "3. 参数收集：\n"
         "还需要这些信息：\n"
-        "分析类型：例如 缓冲分析\n"
-        "缓冲半径：例如 500 米\n"
-        "叠加类型：例如 union\n"
-        "查询表达式：例如 population > 1000\n"
-        "栅格表达式：例如 (A + B) / 2");
+        "分析类型：例如 基础统计 / 频率统计 / 邻域分析\n"
+        "分箱数：例如 10\n"
+        "邻域窗口：例如 3 或 5");
 }
 
 QString SystemContextBuilder::buildMemoryMechanicsBlock() const
@@ -112,7 +110,7 @@ QString SystemContextBuilder::buildEnvContextBlock() const
         "当前环境\n\n"
         "时间：%1\n"
         "工作目录：%2\n"
-        "可用分析工具：run_buffer_analysis、run_overlay_analysis、run_spatial_query、run_raster_calc\n"
+        "可用分析工具：run_basic_statistics、run_frequency_statistics、run_neighborhood_analysis\n"
         "可用只读工具：get_analysis_context、search_memory\n"
         "注意：环境信息为当前会话快照。")
         .arg(QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm"))

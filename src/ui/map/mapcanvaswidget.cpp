@@ -2,10 +2,12 @@
 
 #include <QVBoxLayout>
 #include <QDebug>
+#include <QFileInfo>
 
 #include <qgsmapcanvas.h>
 #include <qgsmaptoolpan.h>
 #include <qgsmaptoolzoom.h>
+#include <qgscoordinatetransform.h>
 #include <qgsvectorlayer.h>
 #include <qgsrasterlayer.h>
 #include <qgsproject.h>
@@ -138,8 +140,9 @@ void MapCanvasWidget::loadFromPath(const QString& _strFilePath)
         return;
     }
 
-    // ── 注册到 QgsProject（统一管理生命周期）─────────
+    // ── 注册到 QgsProject，并显式加入图层树根节点────────
     QgsProject::instance()->addMapLayer(_pLayer, false);
+    QgsProject::instance()->layerTreeRoot()->insertLayer(0, _pLayer);
 
     // ── 加入本画布图层列表（新图层放在最上层）────────
     mpvLayers.prepend(_pLayer);
@@ -231,6 +234,32 @@ void MapCanvasWidget::zoomToFullExtent()
     }
     mpCanvas->zoomToFullExtent();
     mpCanvas->refresh();
+}
+
+// ════════════════════════════════════════════════════════
+//  zoomToLayerExtent
+// ════════════════════════════════════════════════════════
+void MapCanvasWidget::zoomToLayerExtent(const QString& _strLayerId)
+{
+    for (QgsMapLayer* _pLayer : mpvLayers)
+    {
+        if (_pLayer != nullptr && _pLayer->id() == _strLayerId)
+        {
+            if (_pLayer->extent().isEmpty())
+            {
+                qWarning() << "[MapCanvasWidget] zoomToLayerExtent: empty extent:"
+                           << _strLayerId;
+                return;
+            }
+
+            mpCanvas->setExtent(_pLayer->extent());
+            mpCanvas->refresh();
+            return;
+        }
+    }
+
+    qWarning() << "[MapCanvasWidget] zoomToLayerExtent: layer not found:"
+               << _strLayerId;
 }
 
 // ════════════════════════════════════════════════════════

@@ -15,10 +15,9 @@ namespace
 bool isFinalExecutionTool(const QString& _strToolName)
 {
     static const QSet<QString> S_SET_FINAL_TOOLS = {
-        "run_buffer_analysis",
-        "run_overlay_analysis",
-        "run_spatial_query",
-        "run_raster_calc"
+        "run_basic_statistics",
+        "run_frequency_statistics",
+        "run_neighborhood_analysis"
     };
     return S_SET_FINAL_TOOLS.contains(_strToolName);
 }

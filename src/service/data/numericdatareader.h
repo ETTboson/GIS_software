@@ -37,6 +37,23 @@ public:
         NumericDataset& _outDataSet,
         QString& _strError);
 
+    /*
+     * @brief 读取常规栅格文件第一波段
+     *        首期用于 tif / tiff / img 等格式的统一像元值适配
+     * @param_1 _strFilePath: 数据文件路径
+     * @param_2 _outDataSet: 成功时写出的数据集 DTO
+     * @param_3 _pnBandCount: 成功时写出的波段数，可为空
+     * @param_4 _pbHasNoData: 成功时写出的 NoData 标记，可为空
+     * @param_5 _pdNoDataValue: 成功时写出的 NoData 数值，可为空
+     * @param_6 _strError: 失败时写出的错误信息
+     */
+    static bool readRasterFile(const QString& _strFilePath,
+        NumericDataset& _outDataSet,
+        int* _pnBandCount,
+        bool* _pbHasNoData,
+        double* _pdNoDataValue,
+        QString& _strError);
+
 private:
     /*
      * @brief 尝试把文本 token 解析为 double

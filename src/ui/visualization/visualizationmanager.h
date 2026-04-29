@@ -7,14 +7,15 @@
 #include "model/dto/analysisresult.h"
 #include "model/dto/visualizationpoint.h"
 
-class VisualizationDockWidget;
+class AnalysisWorkspaceDockWidget;
 class BarChartWidget;
 class LineChartWidget;
 
 // ════════════════════════════════════════════════════════
 //  VisualizationManager
 //  可视化协调器
-//  负责把 AnalysisResult 中的结构化图表 DTO 分发到具体控件，并维护详情区文本
+//  负责把 AnalysisResult 中的结构化图表 DTO 分发到统一分析工作区的结果页，
+//  并维护图表详情区文本
 // ════════════════════════════════════════════════════════
 class VisualizationManager : public QObject
 {
@@ -33,10 +34,10 @@ public:
     ~VisualizationManager() override = default;
 
     /*
-     * @brief 绑定可视化 Dock 面板
-     * @param_1 _pDockWidget: 可视化停靠面板
+     * @brief 绑定统一分析工作区中的结果展示宿主
+     * @param_1 _pWorkspaceDock: 分析工作区 Dock
      */
-    void attachDock(VisualizationDockWidget* _pDockWidget);
+    void attachWorkspace(AnalysisWorkspaceDockWidget* _pWorkspaceDock);
 
     /*
      * @brief 使用分析结果刷新图表展示
@@ -70,7 +71,7 @@ private:
      */
     QString buildPointDetailText(const VisualizationPoint& _point) const;
 
-    VisualizationDockWidget* mpDockWidget;         // 当前绑定的可视化面板
+    AnalysisWorkspaceDockWidget* mpWorkspaceDock;  // 当前绑定的分析工作区
     BarChartWidget*          mpctrlBarChartWidget; // 柱状图控件
     LineChartWidget*         mpctrlLineChartWidget; // 折线图控件
     AnalysisResult           mResultCurrent;       // 当前已展示的分析结果
