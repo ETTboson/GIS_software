@@ -23,7 +23,8 @@ public:
         None,
         BasicStatistics,
         FrequencyStatistics,
-        NeighborhoodAnalysis
+        NeighborhoodAnalysis,
+        BufferAnalysis
     };
 
     enum class AnalysisTurnKind
@@ -143,6 +144,9 @@ private:
         int nBinCount = 10;                             // 频率统计分箱数
         bool bHasWindowSize = false;                    // 是否已有邻域窗口大小
         int nWindowSize = 3;                            // 邻域窗口大小
+        bool bHasBufferDistance = false;                 // 是否已有缓冲距离
+        double dBufferDistance = 100.0;                  // 缓冲距离
+        int nBufferSegments = 8;                         // 缓冲圆弧分段数
         QStringList vMissingParams;                     // 当前缺失参数列表
         QString strLastError;                           // 最近错误文本
     };
@@ -163,6 +167,10 @@ private:
     static AnalysisTaskType detectTaskType(const QString& _strUserText);
     static bool tryExtractBinCount(const QString& _strText, int& _nBinCount);
     static bool tryExtractWindowSize(const QString& _strText, int& _nWindowSize);
+    static bool tryExtractBufferDistance(const QString& _strText,
+        double& _dBufferDistance);
+    static bool tryExtractBufferSegments(const QString& _strText,
+        int& _nBufferSegments);
 
     AnalysisWorkflowState mState; // 当前分析工作流状态
     IAIToolHost*          mpToolHost = nullptr; // 宿主桥接接口

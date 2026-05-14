@@ -9,6 +9,7 @@
 
 class DataRepository;
 class AntButton;
+class QDoubleSpinBox;
 class QLabel;
 class QListWidget;
 class QListWidgetItem;
@@ -133,6 +134,13 @@ signals:
     void neighborhoodAnalysisRequested(int _nWindowSize);
 
     /*
+     * @brief 用户请求执行缓冲区分析
+     * @param_1 _dDistance: 缓冲距离，单位为源图层 CRS 单位
+     * @param_2 _nSegments: 圆弧分段数
+     */
+    void bufferAnalysisRequested(double _dDistance, int _nSegments);
+
+    /*
      * @brief 用户请求打开属性查询占位能力
      */
     void attributeQueryRequested();
@@ -190,7 +198,9 @@ private:
     QSpinBox*       mpctrlSpinFrequencyBins; // 频率统计分箱数
     AntButton*      mpctrlBtnNeighborhood; // 邻域分析按钮
     QSpinBox*       mpctrlSpinNeighborhoodWindow; // 邻域窗口大小
-    AntButton*      mpctrlBtnBuffer;      // 缓冲分析占位按钮
+    QDoubleSpinBox* mpctrlSpinBufferDistance; // 缓冲距离
+    QSpinBox*       mpctrlSpinBufferSegments; // 缓冲圆弧分段数
+    AntButton*      mpctrlBtnBuffer;      // 缓冲分析按钮
     AntButton*      mpctrlBtnOverlay;     // 叠加分析占位按钮
     AntButton*      mpctrlBtnSpatialQuery; // 空间查询占位按钮
     AntButton*      mpctrlBtnRasterCalc;  // 栅格计算占位按钮

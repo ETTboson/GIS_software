@@ -3,6 +3,7 @@
 #include "service/data/datarepository.h"
 #include "ui/components/antbutton.h"
 
+#include <QDoubleSpinBox>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -35,7 +36,9 @@ AnalysisWorkspaceDockWidget::AnalysisWorkspaceDockWidget(QWidget* _pParent)
     , mpctrlSpinFrequencyBins(new QSpinBox(mpctrlPageTools))
     , mpctrlBtnNeighborhood(new AntButton(tr("运行邻域分析"), mpctrlPageTools))
     , mpctrlSpinNeighborhoodWindow(new QSpinBox(mpctrlPageTools))
-    , mpctrlBtnBuffer(new AntButton(tr("缓冲分析（开发中）"), mpctrlPageTools))
+    , mpctrlSpinBufferDistance(new QDoubleSpinBox(mpctrlPageTools))
+    , mpctrlSpinBufferSegments(new QSpinBox(mpctrlPageTools))
+    , mpctrlBtnBuffer(new AntButton(tr("运行缓冲分析"), mpctrlPageTools))
     , mpctrlBtnOverlay(new AntButton(tr("叠加分析（开发中）"), mpctrlPageTools))
     , mpctrlBtnSpatialQuery(new AntButton(tr("空间查询（开发中）"), mpctrlPageTools))
     , mpctrlBtnRasterCalc(new AntButton(tr("栅格计算（开发中）"), mpctrlPageTools))
@@ -85,6 +88,12 @@ AnalysisWorkspaceDockWidget::AnalysisWorkspaceDockWidget(QWidget* _pParent)
     mpctrlSpinNeighborhoodWindow->setRange(3, 15);
     mpctrlSpinNeighborhoodWindow->setSingleStep(2);
     mpctrlSpinNeighborhoodWindow->setValue(3);
+    mpctrlSpinBufferDistance->setRange(0.000001, 999999999.0);
+    mpctrlSpinBufferDistance->setDecimals(6);
+    mpctrlSpinBufferDistance->setValue(100.0);
+    mpctrlSpinBufferDistance->setSingleStep(10.0);
+    mpctrlSpinBufferSegments->setRange(1, 64);
+    mpctrlSpinBufferSegments->setValue(8);
     mpctrlBtnBasicStatistics->setButtonRole(AntButton::Primary);
     mpctrlBtnFrequencyStatistics->setButtonRole(AntButton::Default);
     mpctrlBtnNeighborhood->setButtonRole(AntButton::Default);
@@ -105,6 +114,8 @@ AnalysisWorkspaceDockWidget::AnalysisWorkspaceDockWidget(QWidget* _pParent)
     QFormLayout* _pSpatialLayout = new QFormLayout();
     _pSpatialLayout->addRow(tr("邻域窗口大小"), mpctrlSpinNeighborhoodWindow);
     _pSpatialLayout->addRow(tr("邻域分析"), mpctrlBtnNeighborhood);
+    _pSpatialLayout->addRow(tr("缓冲距离"), mpctrlSpinBufferDistance);
+    _pSpatialLayout->addRow(tr("圆弧分段数"), mpctrlSpinBufferSegments);
     _pSpatialLayout->addRow(tr("缓冲分析"), mpctrlBtnBuffer);
     _pSpatialLayout->addRow(tr("叠加分析"), mpctrlBtnOverlay);
     _pSpatialLayout->addRow(tr("空间查询"), mpctrlBtnSpatialQuery);
@@ -128,6 +139,8 @@ AnalysisWorkspaceDockWidget::AnalysisWorkspaceDockWidget(QWidget* _pParent)
     _pToolsLayout->addWidget(_pGroupAttribute);
     _pToolsLayout->addStretch(1);
 
+    mpctrlSpinBufferDistance->setEnabled(false);
+    mpctrlSpinBufferSegments->setEnabled(false);
     mpctrlBtnBuffer->setEnabled(false);
     mpctrlBtnOverlay->setEnabled(false);
     mpctrlBtnSpatialQuery->setEnabled(false);
@@ -197,6 +210,12 @@ AnalysisWorkspaceDockWidget::AnalysisWorkspaceDockWidget(QWidget* _pParent)
     connect(mpctrlBtnNeighborhood, &QPushButton::clicked,
         this, [this]() {
             emit neighborhoodAnalysisRequested(mpctrlSpinNeighborhoodWindow->value());
+        });
+    connect(mpctrlBtnBuffer, &QPushButton::clicked,
+        this, [this]() {
+            emit bufferAnalysisRequested(
+                mpctrlSpinBufferDistance->value(),
+                mpctrlSpinBufferSegments->value());
         });
     connect(mpctrlBtnAttributeQuery, &QPushButton::clicked,
         this, &AnalysisWorkspaceDockWidget::attributeQueryRequested);
@@ -468,11 +487,16 @@ void AnalysisWorkspaceDockWidget::updateToolStates(
     mpctrlSpinFrequencyBins->setEnabled(_bHasAsset && _bCanStat);
     mpctrlBtnNeighborhood->setEnabled(_bHasAsset && _bCanRaster);
     mpctrlSpinNeighborhoodWindow->setEnabled(_bHasAsset && _bCanRaster);
+    mpctrlSpinBufferDistance->setEnabled(_bHasAsset && _bCanVector);
+    mpctrlSpinBufferSegments->setEnabled(_bHasAsset && _bCanVector);
+    mpctrlBtnBuffer->setEnabled(_bHasAsset && _bCanVector);
     mpctrlBtnAttributeQuery->setEnabled(_bHasAsset && _bCanAttributeQuery);
 
     const QString _strVectorTip = _bCanVector
-        ? tr("当前数据具备矢量空间分析能力边界，但缓冲/叠加/空间查询仍在开发中。")
+        ? tr("当前矢量资产可执行缓冲区分析；叠加/空间查询仍在开发中。")
         : tr("当前所选资产不具备矢量空间分析能力。");
+    mpctrlSpinBufferDistance->setToolTip(tr("缓冲距离按源图层 CRS 单位解释。"));
+    mpctrlSpinBufferSegments->setToolTip(tr("圆弧分段数用于近似缓冲边界曲线。"));
     mpctrlBtnBuffer->setToolTip(_strVectorTip);
     mpctrlBtnOverlay->setToolTip(_strVectorTip);
     mpctrlBtnSpatialQuery->setToolTip(_strVectorTip);
@@ -487,7 +511,7 @@ void AnalysisWorkspaceDockWidget::updateToolStates(
     } else {
         mpctrlLabelToolsHint->setText(tr(
             "当前资产：%1\n"
-            "可用能力会自动启用；开发中工具保持占位，避免误执行。")
+            "可用能力会自动启用；缓冲距离按源图层 CRS 单位解释。")
             .arg(_assetCurrent.strName));
     }
 }

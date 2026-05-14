@@ -10,8 +10,8 @@
 // ════════════════════════════════════════════════════════
 //  SpatialAnalysisService
 //  空间分析能力服务
-//  首期仅真正实现栅格邻域分析，
-//  统一从栅格资产中的数值视图读取像元矩阵。
+//  提供栅格邻域分析与矢量缓冲区分析，
+//  分析结果统一封装为 AnalysisResult 后通过信号返回。
 // ════════════════════════════════════════════════════════
 class SpatialAnalysisService : public QObject
 {
@@ -37,6 +37,16 @@ public:
     void runNeighborhoodAnalysis(const AnalysisDataAsset& _assetInput,
         int _nWindowSize);
 
+    /*
+     * @brief 执行矢量缓冲区分析
+     * @param_1 _assetInput: 当前分析资产
+     * @param_2 _dDistance: 缓冲距离，单位为源图层 CRS 单位
+     * @param_3 _nSegments: 圆弧分段数
+     */
+    void runBufferAnalysis(const AnalysisDataAsset& _assetInput,
+        double _dDistance,
+        int _nSegments);
+
 signals:
     void analysisProgress(int _nPercent);
     void analysisFinished(const AnalysisResult& _result);
@@ -55,9 +65,11 @@ private:
      * @brief 构造失败结果并发出失败信号
      * @param_1 _assetInput: 当前分析资产
      * @param_2 _strError: 错误文本
+     * @param_3 _strToolId: 工具标识
      */
     void emitFailure(const AnalysisDataAsset& _assetInput,
-        const QString& _strError);
+        const QString& _strError,
+        const QString& _strToolId = QStringLiteral("neighborhood_analysis"));
 
     /*
      * @brief 为邻域分析结果构造折线图数据

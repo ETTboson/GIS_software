@@ -16,7 +16,7 @@ src/
 ├── model/                             # 纯数据结构层，不含业务逻辑
 │   ├── dto/
 │   │   ├── analysisdataasset.h        # 统一分析资产 DTO，承载类型、能力集合与各类载荷
-│   │   ├── analysisresult.h           # 统一分析结果 DTO，补充 sourceAssetId/toolId
+│   │   ├── analysisresult.h           # 统一分析结果 DTO，补充 sourceAssetId/toolId 与输出图层路径
 │   │   ├── chatmessage.h              # AI 对话消息 DTO
 │   │   ├── layerinfo.h                # 图层信息 DTO
 │   │   ├── metadatadocument.h         # XML 元数据文档载荷 DTO
@@ -42,7 +42,7 @@ src/
 │   │       ├── systemcontextbuilder.h/cpp # AI system prompt 构建器，提示词已切到数据资产 + 能力模型
 │   │       └── memoryfilemanager.h/cpp    # ET.md / memory/*.md 记忆文件管理
 │   ├── workflow/
-│   │   └── analysisworkflowcoordinator.h/cpp # 分析工作流状态机，负责基础统计/频率统计/邻域分析补参
+│   │   └── analysisworkflowcoordinator.h/cpp # 分析工作流状态机，负责基础统计/频率统计/邻域/缓冲分析补参
 │   ├── integration/
 │   │   └── qgsappinitializer.h/cpp    # QGIS 应用初始化/释放管理
 │   └── interfaces/
@@ -58,7 +58,7 @@ src/
 │   │   └── numericdatareader.h/cpp    # 数值数据读取器，负责 CSV / 简单栅格 / 常规栅格第一波段解析
 │   └── analysis/
 │       ├── statisticalanalysisservice.h/cpp # 统计分析能力服务，统一接收数值视图执行基础统计与频率统计
-│       ├── spatialanalysisservice.h/cpp     # 空间分析能力服务，首期实现栅格邻域分析
+│       ├── spatialanalysisservice.h/cpp     # 空间分析能力服务，实现栅格邻域分析与矢量缓冲区分析
 │       └── attributequeryservice.h/cpp      # 属性查询能力占位服务，统一返回“即将支持”结果
 └── ui/                                # 表现层，只负责交互与结果展示
     ├── mainwindow.h/cpp               # 主窗口，负责地图入口/分析入口分流、统一工作区编排与自动刷新

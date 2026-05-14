@@ -122,6 +122,11 @@ add_executable(FirstQT
     src/ui/visualization/charts/linechartwidget.h
 )
 
+# 如果你的计算机没有支持Windows的全局 UTF-8，该语句是必须的。
+target_compile_options(FirstQT PRIVATE
+    $<$<CXX_COMPILER_ID:MSVC>:/utf-8>
+)
+
 target_include_directories(FirstQT PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/resources

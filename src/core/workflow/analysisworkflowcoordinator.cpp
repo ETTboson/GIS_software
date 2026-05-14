@@ -19,6 +19,8 @@ QString analysisTaskTypeToString(
         return QString::fromUtf8("频率统计");
     case AnalysisWorkflowCoordinator::AnalysisTaskType::NeighborhoodAnalysis:
         return QString::fromUtf8("邻域分析");
+    case AnalysisWorkflowCoordinator::AnalysisTaskType::BufferAnalysis:
+        return QString::fromUtf8("缓冲区分析");
     case AnalysisWorkflowCoordinator::AnalysisTaskType::None:
     default:
         return QString::fromUtf8("未确定");
@@ -90,7 +92,8 @@ QString AnalysisWorkflowCoordinator::buildDeterministicReply() const
             "请选择一个选项：\n"
             "1. 基础统计\n"
             "2. 频率统计\n"
-            "3. 邻域分析");
+            "3. 邻域分析\n"
+            "4. 缓冲区分析");
     }
 
     return buildNeedMoreInfoReply();
@@ -119,7 +122,8 @@ QJsonArray AnalysisWorkflowCoordinator::buildStateUpdateToolsDefinition() const
         _toolNameProp["enum"] = QJsonArray{
             "run_basic_statistics",
             "run_frequency_statistics",
-            "run_neighborhood_analysis"
+            "run_neighborhood_analysis",
+            "run_buffer_analysis"
         };
 
         QJsonObject _binProp;
@@ -128,10 +132,18 @@ QJsonArray AnalysisWorkflowCoordinator::buildStateUpdateToolsDefinition() const
         QJsonObject _windowProp;
         _windowProp["type"] = "integer";
 
+        QJsonObject _distanceProp;
+        _distanceProp["type"] = "number";
+
+        QJsonObject _segmentsProp;
+        _segmentsProp["type"] = "integer";
+
         QJsonObject _properties;
         _properties["tool_name"] = _toolNameProp;
         _properties["bin_count"] = _binProp;
         _properties["window_size"] = _windowProp;
+        _properties["distance"] = _distanceProp;
+        _properties["segments"] = _segmentsProp;
 
         QJsonObject _params;
         _params["type"] = "object";
@@ -253,6 +265,9 @@ bool AnalysisWorkflowCoordinator::tryApplyLocalStateUpdate(
         case AnalysisTaskType::NeighborhoodAnalysis:
             _jsonArgs["tool_name"] = "run_neighborhood_analysis";
             break;
+        case AnalysisTaskType::BufferAnalysis:
+            _jsonArgs["tool_name"] = "run_buffer_analysis";
+            break;
         case AnalysisTaskType::None:
         default:
             break;
@@ -267,6 +282,19 @@ bool AnalysisWorkflowCoordinator::tryApplyLocalStateUpdate(
     int _nWindowSize = 0;
     if (tryExtractWindowSize(_strUserText, _nWindowSize)) {
         _jsonArgs["window_size"] = _nWindowSize;
+    }
+
+    if (_type == AnalysisTaskType::BufferAnalysis
+        || mState.type == AnalysisTaskType::BufferAnalysis) {
+        double _dBufferDistance = 0.0;
+        if (tryExtractBufferDistance(_strUserText, _dBufferDistance)) {
+            _jsonArgs["distance"] = _dBufferDistance;
+        }
+
+        int _nBufferSegments = 0;
+        if (tryExtractBufferSegments(_strUserText, _nBufferSegments)) {
+            _jsonArgs["segments"] = _nBufferSegments;
+        }
     }
 
     if (_jsonArgs.isEmpty()) {
@@ -301,6 +329,11 @@ void AnalysisWorkflowCoordinator::recalculateMissingParams()
             mState.vMissingParams << "window_size";
         }
         break;
+    case AnalysisTaskType::BufferAnalysis:
+        if (!mState.bHasBufferDistance) {
+            mState.vMissingParams << "distance";
+        }
+        break;
     case AnalysisTaskType::None:
     default:
         mState.vMissingParams << "task_type";
@@ -322,6 +355,9 @@ AnalysisWorkflowCoordinator::buildExecutionTransition() const
         _result.jsonToolArgs["bin_count"] = mState.nBinCount;
     } else if (_result.strToolName == "run_neighborhood_analysis") {
         _result.jsonToolArgs["window_size"] = mState.nWindowSize;
+    } else if (_result.strToolName == "run_buffer_analysis") {
+        _result.jsonToolArgs["distance"] = mState.dBufferDistance;
+        _result.jsonToolArgs["segments"] = mState.nBufferSegments;
     }
     return _result;
 }
@@ -337,6 +373,8 @@ AnalysisWorkflowCoordinator::applyStateUpdateArgs(const QJsonObject& _jsonArgs)
             mState.type = AnalysisTaskType::FrequencyStatistics;
         } else if (_strToolName == "run_neighborhood_analysis") {
             mState.type = AnalysisTaskType::NeighborhoodAnalysis;
+        } else if (_strToolName == "run_buffer_analysis") {
+            mState.type = AnalysisTaskType::BufferAnalysis;
         }
     }
 
@@ -353,6 +391,21 @@ AnalysisWorkflowCoordinator::applyStateUpdateArgs(const QJsonObject& _jsonArgs)
         if (_nWindowSize >= 3 && (_nWindowSize % 2) == 1) {
             mState.bHasWindowSize = true;
             mState.nWindowSize = _nWindowSize;
+        }
+    }
+
+    if (_jsonArgs.contains("distance")) {
+        const double _dBufferDistance = _jsonArgs["distance"].toDouble(0.0);
+        if (_dBufferDistance > 0.0) {
+            mState.bHasBufferDistance = true;
+            mState.dBufferDistance = _dBufferDistance;
+        }
+    }
+
+    if (_jsonArgs.contains("segments")) {
+        const int _nBufferSegments = _jsonArgs["segments"].toInt(0);
+        if (_nBufferSegments > 0) {
+            mState.nBufferSegments = _nBufferSegments;
         }
     }
 
@@ -419,6 +472,10 @@ QString AnalysisWorkflowCoordinator::buildCollectedParamLines() const
     if (mState.bHasWindowSize) {
         _vLines << QString::fromUtf8("  邻域窗口：%1").arg(mState.nWindowSize);
     }
+    if (mState.bHasBufferDistance) {
+        _vLines << QString::fromUtf8("  缓冲距离：%1").arg(mState.dBufferDistance);
+        _vLines << QString::fromUtf8("  缓冲分段数：%1").arg(mState.nBufferSegments);
+    }
     return _vLines.join("\n");
 }
 
@@ -427,11 +484,13 @@ QString AnalysisWorkflowCoordinator::buildMissingParamLines() const
     QStringList _vLines;
     for (const QString& _strParam : mState.vMissingParams) {
         if (_strParam == "task_type") {
-            _vLines << QString::fromUtf8("分析类型：例如 基础统计 / 频率统计 / 邻域分析");
+            _vLines << QString::fromUtf8("分析类型：例如 基础统计 / 频率统计 / 邻域分析 / 缓冲区分析");
         } else if (_strParam == "bin_count") {
             _vLines << QString::fromUtf8("分箱数：例如 10");
         } else if (_strParam == "window_size") {
             _vLines << QString::fromUtf8("邻域窗口：例如 3 或 5");
+        } else if (_strParam == "distance") {
+            _vLines << QString::fromUtf8("缓冲距离：例如 100");
         }
     }
 
@@ -450,6 +509,8 @@ QString AnalysisWorkflowCoordinator::currentToolName() const
         return "run_frequency_statistics";
     case AnalysisTaskType::NeighborhoodAnalysis:
         return "run_neighborhood_analysis";
+    case AnalysisTaskType::BufferAnalysis:
+        return "run_buffer_analysis";
     case AnalysisTaskType::None:
     default:
         return QString();
@@ -482,7 +543,11 @@ bool AnalysisWorkflowCoordinator::looksLikeStateUpdateInput(
     if (_strText.contains(QString::fromUtf8("分箱"))
         || _strText.contains("bin", Qt::CaseInsensitive)
         || _strText.contains(QString::fromUtf8("窗口"))
-        || _strText.contains("window", Qt::CaseInsensitive)) {
+        || _strText.contains("window", Qt::CaseInsensitive)
+        || _strText.contains(QString::fromUtf8("缓冲距离"))
+        || _strText.contains(QString::fromUtf8("距离"))
+        || _strText.contains("distance", Qt::CaseInsensitive)
+        || _strText.contains("segment", Qt::CaseInsensitive)) {
         return true;
     }
     if (!_strText.trimmed().isEmpty()
@@ -499,6 +564,10 @@ AnalysisWorkflowCoordinator::detectTaskType(const QString& _strUserText)
     if (_strText.contains(QString::fromUtf8("邻域"))
         || _strText.contains("neighborhood")) {
         return AnalysisTaskType::NeighborhoodAnalysis;
+    }
+    if (_strText.contains(QString::fromUtf8("缓冲"))
+        || _strText.contains("buffer")) {
+        return AnalysisTaskType::BufferAnalysis;
     }
     if (_strText.contains(QString::fromUtf8("频率"))
         || _strText.contains(QString::fromUtf8("直方"))
@@ -542,4 +611,47 @@ bool AnalysisWorkflowCoordinator::tryExtractWindowSize(const QString& _strText,
 
     _nWindowSize = _match.captured(1).toInt();
     return _nWindowSize >= 3 && (_nWindowSize % 2) == 1;
+}
+
+bool AnalysisWorkflowCoordinator::tryExtractBufferDistance(const QString& _strText,
+    double& _dBufferDistance)
+{
+    static const QRegularExpression S_RE_DISTANCE_AFTER(
+        R"((?:缓冲距离|距离|缓冲|buffer(?:_distance)?|distance)\D{0,8}(-?\d+(?:\.\d+)?))",
+        QRegularExpression::CaseInsensitiveOption);
+    static const QRegularExpression S_RE_DISTANCE_BEFORE(
+        R"((-?\d+(?:\.\d+)?)\D{0,8}(?:缓冲|buffer))",
+        QRegularExpression::CaseInsensitiveOption);
+    static const QRegularExpression S_RE_NUMBER_ONLY(
+        R"(^\s*(-?\d+(?:\.\d+)?)\s*$)",
+        QRegularExpression::CaseInsensitiveOption);
+
+    QRegularExpressionMatch _match = S_RE_DISTANCE_AFTER.match(_strText);
+    if (!_match.hasMatch()) {
+        _match = S_RE_DISTANCE_BEFORE.match(_strText);
+    }
+    if (!_match.hasMatch()) {
+        _match = S_RE_NUMBER_ONLY.match(_strText);
+    }
+    if (!_match.hasMatch()) {
+        return false;
+    }
+
+    _dBufferDistance = _match.captured(1).toDouble();
+    return _dBufferDistance > 0.0;
+}
+
+bool AnalysisWorkflowCoordinator::tryExtractBufferSegments(const QString& _strText,
+    int& _nBufferSegments)
+{
+    static const QRegularExpression S_RE_SEGMENTS(
+        R"((?:圆弧分段数|分段数|分段|segments?)\D{0,6}(\d+))",
+        QRegularExpression::CaseInsensitiveOption);
+    const QRegularExpressionMatch _match = S_RE_SEGMENTS.match(_strText);
+    if (!_match.hasMatch()) {
+        return false;
+    }
+
+    _nBufferSegments = _match.captured(1).toInt();
+    return _nBufferSegments > 0;
 }

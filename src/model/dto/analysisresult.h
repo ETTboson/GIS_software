@@ -21,6 +21,10 @@ struct AnalysisResult
     QString           strDesc;             // 分析结果的人类可读描述，用于日志面板与 AI 回传
     bool              bSuccess = false;    // 分析是否成功执行；false 时 strDesc 描述错误原因
     bool              bHasVisualization = false; // 当前结果是否携带结构化可视化数据
+    bool              bHasOutputLayer = false; // 当前结果是否产出了可加载到地图的图层
+    QString           strOutputPath;       // 输出图层文件路径
+    QString           strOutputLayerName;  // 输出图层显示名称
+    QString           strOutputLayerType;  // 输出图层类型，如 vector / raster
     VisualizationData dataVisualization;   // 结构化可视化数据载荷
 };
 

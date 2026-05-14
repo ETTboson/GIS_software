@@ -299,6 +299,22 @@ bool MainWindow::executeAnalysisTool(const QString& _strToolName,
         }
         _configRun.strToolId = "neighborhood_analysis";
         _configRun.nNeighborhoodWindow = _nWindowSize;
+    } else if (_strToolName == "run_buffer_analysis") {
+        const double _dDistance = _jsonArgs["distance"].toDouble(0.0);
+        const int _nSegments = _jsonArgs.contains("segments")
+            ? _jsonArgs["segments"].toInt(8)
+            : 8;
+        if (_dDistance <= 0.0) {
+            _strError = tr("参数错误：distance 必须大于 0");
+            return false;
+        }
+        if (_nSegments <= 0) {
+            _strError = tr("参数错误：segments 必须大于 0");
+            return false;
+        }
+        _configRun.strToolId = "buffer_analysis";
+        _configRun.dBufferDistance = _dDistance;
+        _configRun.nBufferSegments = _nSegments;
     } else {
         _strError = tr("未知分析工具：%1").arg(_strToolName);
         return false;
@@ -612,6 +628,9 @@ void MainWindow::initConnections()
         &AnalysisWorkspaceDockWidget::neighborhoodAnalysisRequested,
         this, &MainWindow::onNeighborhoodAnalysisRequested);
     connect(mpctrlDockAnalysisWorkspace,
+        &AnalysisWorkspaceDockWidget::bufferAnalysisRequested,
+        this, &MainWindow::onBufferAnalysisRequested);
+    connect(mpctrlDockAnalysisWorkspace,
         &AnalysisWorkspaceDockWidget::attributeQueryRequested,
         this, &MainWindow::onAttributeQueryRequested);
 
@@ -799,6 +818,13 @@ void MainWindow::runToolForAsset(const AnalysisDataAsset& _assetInput,
     if (_configRun.strToolId == "neighborhood_analysis") {
         mpSpatialAnalysisService->runNeighborhoodAnalysis(
             _assetInput, _configRun.nNeighborhoodWindow);
+        return;
+    }
+    if (_configRun.strToolId == "buffer_analysis") {
+        mpSpatialAnalysisService->runBufferAnalysis(
+            _assetInput,
+            _configRun.dBufferDistance,
+            _configRun.nBufferSegments);
         return;
     }
     if (_configRun.strToolId == "attribute_query") {
@@ -1039,6 +1065,13 @@ void MainWindow::onAnalysisFinished(const AnalysisResult& _result)
 
     mpVisualizationManager->updateFromResult(_result);
 
+    if (_result.bHasOutputLayer
+        && !_result.strOutputPath.trimmed().isEmpty()
+        && mpDataService != nullptr) {
+        mpctrlLabelStatus->setText(tr("  正在添加结果图层...  "));
+        mpDataService->loadLayerToMap(_result.strOutputPath);
+    }
+
     if (mbHasPendingRun
         && mstrPendingRunAssetId == _result.strSourceAssetId) {
         mmapLastSuccessfulRuns[mstrPendingRunAssetId] = mConfigPendingRun;
@@ -1198,6 +1231,16 @@ void MainWindow::onNeighborhoodAnalysisRequested(int _nNeighborhoodWindow)
     AnalysisRunConfig _configRun;
     _configRun.strToolId = "neighborhood_analysis";
     _configRun.nNeighborhoodWindow = _nNeighborhoodWindow;
+    runToolForCurrentAsset(_configRun);
+}
+
+void MainWindow::onBufferAnalysisRequested(double _dBufferDistance,
+    int _nBufferSegments)
+{
+    AnalysisRunConfig _configRun;
+    _configRun.strToolId = "buffer_analysis";
+    _configRun.dBufferDistance = _dBufferDistance;
+    _configRun.nBufferSegments = _nBufferSegments;
     runToolForCurrentAsset(_configRun);
 }
 

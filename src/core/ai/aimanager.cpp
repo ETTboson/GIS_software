@@ -17,7 +17,8 @@ bool isFinalExecutionTool(const QString& _strToolName)
     static const QSet<QString> S_SET_FINAL_TOOLS = {
         "run_basic_statistics",
         "run_frequency_statistics",
-        "run_neighborhood_analysis"
+        "run_neighborhood_analysis",
+        "run_buffer_analysis"
     };
     return S_SET_FINAL_TOOLS.contains(_strToolName);
 }

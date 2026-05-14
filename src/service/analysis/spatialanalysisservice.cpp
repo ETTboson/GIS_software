@@ -1,6 +1,92 @@
 #include "spatialanalysisservice.h"
 
+#include <limits>
+#include <memory>
+
+#include <QDir>
+#include <QFileInfo>
+#include <QRegularExpression>
+#include <QStandardPaths>
 #include <QtMath>
+
+#include <qgsfeature.h>
+#include <qgsfeatureiterator.h>
+#include <qgsfeaturesink.h>
+#include <qgsgeometry.h>
+#include <qgsproject.h>
+#include <qgsvectorfilewriter.h>
+#include <qgsvectorlayer.h>
+
+namespace
+{
+
+QString sanitizeFilePart(const QString& _strInput)
+{
+    QString _strSafe = _strInput.trimmed();
+    if (_strSafe.isEmpty()) {
+        _strSafe = QStringLiteral("buffer_result");
+    }
+    _strSafe.replace(QRegularExpression(QStringLiteral("[^A-Za-z0-9_\\-]+")),
+        QStringLiteral("_"));
+    return _strSafe;
+}
+
+QString formatDistanceForPath(double _dDistance)
+{
+    QString _strDistance = QString::number(_dDistance, 'f', 3);
+    while (_strDistance.contains('.') && _strDistance.endsWith('0')) {
+        _strDistance.chop(1);
+    }
+    if (_strDistance.endsWith('.')) {
+        _strDistance.chop(1);
+    }
+    _strDistance.replace('-', 'm');
+    _strDistance.replace('.', 'p');
+    return _strDistance;
+}
+
+QString writableOutputDirectory(const QString& _strSourcePath)
+{
+    const QFileInfo _fiSource(_strSourcePath);
+    const QString _strSourceOutDir =
+        QDir(_fiSource.absolutePath()).absoluteFilePath(QStringLiteral("analysis_outputs"));
+
+    QDir _dirSourceOut(_strSourceOutDir);
+    if (_dirSourceOut.mkpath(QStringLiteral("."))
+        && QFileInfo(_strSourceOutDir).isWritable()) {
+        return _strSourceOutDir;
+    }
+
+    QString _strDocumentsDir =
+        QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+    if (_strDocumentsDir.trimmed().isEmpty()) {
+        _strDocumentsDir = QDir::homePath();
+    }
+
+    const QString _strFallbackOutDir = QDir(_strDocumentsDir).absoluteFilePath(
+        QStringLiteral("GeoAI/analysis_outputs"));
+    QDir _dirFallbackOut(_strFallbackOutDir);
+    _dirFallbackOut.mkpath(QStringLiteral("."));
+    return _strFallbackOutDir;
+}
+
+QString buildBufferOutputPath(const AnalysisDataAsset& _assetInput,
+    double _dDistance)
+{
+    const QFileInfo _fiSource(_assetInput.strSourcePath);
+    QString _strBaseName = _fiSource.completeBaseName();
+    if (_strBaseName.trimmed().isEmpty()) {
+        _strBaseName = _assetInput.strName;
+    }
+
+    const QString _strFileName = QStringLiteral("%1_buffer_%2.geojson")
+        .arg(sanitizeFilePart(_strBaseName),
+            sanitizeFilePart(formatDistanceForPath(_dDistance)));
+    return QDir(writableOutputDirectory(_assetInput.strSourcePath))
+        .absoluteFilePath(_strFileName);
+}
+
+} // namespace
 
 SpatialAnalysisService::SpatialAnalysisService(QObject* _pParent)
     : QObject(_pParent)
@@ -107,17 +193,187 @@ void SpatialAnalysisService::runNeighborhoodAnalysis(
     emit analysisFinished(_result);
 }
 
+void SpatialAnalysisService::runBufferAnalysis(
+    const AnalysisDataAsset& _assetInput,
+    double _dDistance,
+    int _nSegments)
+{
+    if (_assetInput.strSourcePath.trimmed().isEmpty()) {
+        emitFailure(_assetInput, tr("当前矢量资产没有源文件路径，无法执行缓冲区分析"),
+            QStringLiteral("buffer_analysis"));
+        return;
+    }
+
+    if (_dDistance <= 0.0) {
+        emitFailure(_assetInput, tr("缓冲距离必须大于 0"),
+            QStringLiteral("buffer_analysis"));
+        return;
+    }
+
+    if (_nSegments <= 0) {
+        emitFailure(_assetInput, tr("圆弧分段数必须大于 0"),
+            QStringLiteral("buffer_analysis"));
+        return;
+    }
+
+    QgsVectorLayer _layerVector(
+        _assetInput.strSourcePath,
+        QFileInfo(_assetInput.strSourcePath).completeBaseName(),
+        QStringLiteral("ogr"));
+    if (!_layerVector.isValid()) {
+        emitFailure(_assetInput,
+            tr("无法读取矢量数据：%1").arg(_assetInput.strSourcePath),
+            QStringLiteral("buffer_analysis"));
+        return;
+    }
+
+    const long long _lFeatureTotal = _layerVector.featureCount();
+    if (_lFeatureTotal <= 0) {
+        emitFailure(_assetInput, tr("当前矢量图层没有可缓冲的要素"),
+            QStringLiteral("buffer_analysis"));
+        return;
+    }
+
+    emit analysisProgress(0);
+
+    const QString _strOutputPath = buildBufferOutputPath(_assetInput, _dDistance);
+    const QString _strOutputLayerName =
+        QFileInfo(_strOutputPath).completeBaseName();
+
+    QgsVectorFileWriter::SaveVectorOptions _options;
+    _options.driverName = QStringLiteral("GeoJSON");
+    _options.layerName = _strOutputLayerName;
+    _options.fileEncoding = QStringLiteral("UTF-8");
+    _options.actionOnExistingFile = QgsVectorFileWriter::CreateOrOverwriteFile;
+
+    std::unique_ptr<QgsVectorFileWriter> _pWriter(
+        QgsVectorFileWriter::create(
+            _strOutputPath,
+            _layerVector.fields(),
+            Qgis::WkbType::MultiPolygon,
+            _layerVector.crs(),
+            QgsProject::instance()->transformContext(),
+            _options));
+
+    if (!_pWriter || _pWriter->hasError() != QgsVectorFileWriter::NoError) {
+        const QString _strError =
+            (_pWriter != nullptr && !_pWriter->errorMessage().trimmed().isEmpty())
+            ? _pWriter->errorMessage()
+            : tr("未知写出错误");
+        emitFailure(_assetInput,
+            tr("创建缓冲结果文件失败：%1").arg(_strError),
+            QStringLiteral("buffer_analysis"));
+        return;
+    }
+
+    long long _lProcessedCount = 0;
+    int _nBufferedCount = 0;
+    int _nSkippedCount = 0;
+    double _dAreaTotal = 0.0;
+    double _dAreaMin = std::numeric_limits<double>::max();
+    double _dAreaMax = 0.0;
+
+    QgsFeature _featureCurrent;
+    QgsFeatureIterator _itFeature = _layerVector.getFeatures();
+    while (_itFeature.nextFeature(_featureCurrent)) {
+        ++_lProcessedCount;
+
+        const QgsGeometry _geomSource = _featureCurrent.geometry();
+        if (_geomSource.isNull() || _geomSource.isEmpty()) {
+            ++_nSkippedCount;
+            continue;
+        }
+
+        QgsGeometry _geomBuffer = _geomSource.buffer(_dDistance, _nSegments);
+        if (_geomBuffer.isNull() || _geomBuffer.isEmpty()) {
+            ++_nSkippedCount;
+            continue;
+        }
+
+        _geomBuffer.convertToMultiType();
+
+        QgsFeature _featureOutput;
+        _featureOutput.setFields(_layerVector.fields(), true);
+        _featureOutput.setAttributes(_featureCurrent.attributes());
+        _featureOutput.setGeometry(_geomBuffer);
+        if (!_pWriter->addFeature(_featureOutput)) {
+            ++_nSkippedCount;
+            continue;
+        }
+
+        const double _dAreaCurrent = _geomBuffer.area();
+        _dAreaTotal += _dAreaCurrent;
+        _dAreaMin = qMin(_dAreaMin, _dAreaCurrent);
+        _dAreaMax = qMax(_dAreaMax, _dAreaCurrent);
+        ++_nBufferedCount;
+
+        const int _nProgress = static_cast<int>(
+            qMin(99.0, 100.0 * static_cast<double>(_lProcessedCount)
+                / static_cast<double>(_lFeatureTotal)));
+        emit analysisProgress(_nProgress);
+    }
+
+    _pWriter.reset();
+
+    if (_nBufferedCount <= 0) {
+        emitFailure(_assetInput, tr("缓冲区分析未生成有效结果，请检查源几何"),
+            QStringLiteral("buffer_analysis"));
+        return;
+    }
+
+    emit analysisProgress(100);
+
+    AnalysisResult _result;
+    _result.strType = QStringLiteral("buffer_analysis");
+    _result.strToolId = QStringLiteral("buffer_analysis");
+    _result.strSourceAssetId = _assetInput.strAssetId;
+    _result.strSourceAssetName = _assetInput.strName;
+    _result.bSuccess = true;
+    _result.bHasVisualization = false;
+    _result.bHasOutputLayer = true;
+    _result.strOutputPath = _strOutputPath;
+    _result.strOutputLayerName = _strOutputLayerName;
+    _result.strOutputLayerType = QStringLiteral("vector");
+    _result.strDesc = tr(
+        "缓冲区分析完成\n"
+        "数据资产：%1\n"
+        "缓冲距离：%2（源图层 CRS 单位）\n"
+        "圆弧分段数：%3\n"
+        "源要素数：%4\n"
+        "成功缓冲要素数：%5\n"
+        "跳过要素数：%6\n"
+        "缓冲面积总和：%7\n"
+        "最小缓冲面积：%8\n"
+        "最大缓冲面积：%9\n"
+        "输出图层：%10")
+        .arg(_assetInput.strName)
+        .arg(_dDistance, 0, 'f', 6)
+        .arg(_nSegments)
+        .arg(_lFeatureTotal)
+        .arg(_nBufferedCount)
+        .arg(_nSkippedCount)
+        .arg(_dAreaTotal, 0, 'f', 6)
+        .arg(_dAreaMin, 0, 'f', 6)
+        .arg(_dAreaMax, 0, 'f', 6)
+        .arg(_strOutputPath);
+    emit analysisFinished(_result);
+}
+
 int SpatialAnalysisService::ValueIndex(int _nRowIdx, int _nColIdx, int _nColCount)
 {
     return _nRowIdx * _nColCount + _nColIdx;
 }
 
 void SpatialAnalysisService::emitFailure(const AnalysisDataAsset& _assetInput,
-    const QString& _strError)
+    const QString& _strError,
+    const QString& _strToolId)
 {
     AnalysisResult _result;
-    _result.strType = "neighborhood_analysis";
-    _result.strToolId = "neighborhood_analysis";
+    const QString _strResolvedToolId = _strToolId.trimmed().isEmpty()
+        ? QStringLiteral("neighborhood_analysis")
+        : _strToolId;
+    _result.strType = _strResolvedToolId;
+    _result.strToolId = _strResolvedToolId;
     _result.strSourceAssetId = _assetInput.strAssetId;
     _result.strSourceAssetName = _assetInput.strName;
     _result.strDesc = _strError;

@@ -33,7 +33,8 @@ void ToolCallDispatcher::dispatch(const QString& _strName,
         executeGetAnalysisContext();
     } else if (_strName == "run_basic_statistics"
         || _strName == "run_frequency_statistics"
-        || _strName == "run_neighborhood_analysis") {
+        || _strName == "run_neighborhood_analysis"
+        || _strName == "run_buffer_analysis") {
         executeAnalysisTool(_strName, _jsonArgs);
     } else if (_strName == "save_memory") {
         executeSaveMemory(_jsonArgs);
@@ -120,6 +121,35 @@ QJsonArray ToolCallDispatcher::buildToolsDefinition() const
         QJsonObject _fn;
         _fn["name"] = "run_neighborhood_analysis";
         _fn["description"] = "对当前选中栅格资产执行邻域分析。";
+        _fn["parameters"] = _params;
+
+        QJsonObject _tool;
+        _tool["type"] = "function";
+        _tool["function"] = _fn;
+        _jsonTools.append(_tool);
+    }
+
+    {
+        QJsonObject _distanceProp;
+        _distanceProp["type"] = "number";
+        _distanceProp["description"] = "缓冲距离，必须大于 0，单位为源图层 CRS 单位";
+
+        QJsonObject _segmentsProp;
+        _segmentsProp["type"] = "integer";
+        _segmentsProp["description"] = "圆弧分段数，可选，默认 8，必须大于 0";
+
+        QJsonObject _properties;
+        _properties["distance"] = _distanceProp;
+        _properties["segments"] = _segmentsProp;
+
+        QJsonObject _params;
+        _params["type"] = "object";
+        _params["properties"] = _properties;
+        _params["required"] = QJsonArray{ "distance" };
+
+        QJsonObject _fn;
+        _fn["name"] = "run_buffer_analysis";
+        _fn["description"] = "对当前选中矢量资产执行缓冲区分析，并将结果写出为 GeoJSON 图层。";
         _fn["parameters"] = _params;
 
         QJsonObject _tool;
@@ -221,6 +251,19 @@ void ToolCallDispatcher::executeAnalysisTool(const QString& _strToolName,
         const int _nWindowSize = _jsonArgs["window_size"].toInt(0);
         if (_nWindowSize < 3 || (_nWindowSize % 2) == 0) {
             emit toolFailed(_strToolName, tr("参数错误：window_size 必须是不小于 3 的奇数"));
+            return;
+        }
+    } else if (_strToolName == "run_buffer_analysis") {
+        const double _dDistance = _jsonArgs["distance"].toDouble(0.0);
+        const int _nSegments = _jsonArgs.contains("segments")
+            ? _jsonArgs["segments"].toInt(8)
+            : 8;
+        if (_dDistance <= 0.0) {
+            emit toolFailed(_strToolName, tr("参数错误：distance 必须大于 0"));
+            return;
+        }
+        if (_nSegments <= 0) {
+            emit toolFailed(_strToolName, tr("参数错误：segments 必须大于 0"));
             return;
         }
     }
