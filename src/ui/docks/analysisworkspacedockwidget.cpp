@@ -3,9 +3,9 @@
 #include "service/data/datarepository.h"
 #include "ui/components/antbutton.h"
 
+#include <QComboBox>
 #include <QDoubleSpinBox>
 #include <QFormLayout>
-#include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLayout>
@@ -31,6 +31,8 @@ AnalysisWorkspaceDockWidget::AnalysisWorkspaceDockWidget(QWidget* _pParent)
     , mpctrlAssetSummaryView(new QTextEdit(mpctrlPageData))
     , mpctrlPageTools(new QWidget(mpctrlTabWidget))
     , mpctrlLabelToolsHint(new QLabel(tr("请选择一个数据资产后，工具会按能力自动启用。"), mpctrlPageTools))
+    , mpctrlComboToolSelector(new QComboBox(mpctrlPageTools))
+    , mpctrlToolStack(new QStackedWidget(mpctrlPageTools))
     , mpctrlBtnBasicStatistics(new AntButton(tr("运行基础统计"), mpctrlPageTools))
     , mpctrlBtnFrequencyStatistics(new AntButton(tr("运行频率统计"), mpctrlPageTools))
     , mpctrlSpinFrequencyBins(new QSpinBox(mpctrlPageTools))
@@ -39,7 +41,9 @@ AnalysisWorkspaceDockWidget::AnalysisWorkspaceDockWidget(QWidget* _pParent)
     , mpctrlSpinBufferDistance(new QDoubleSpinBox(mpctrlPageTools))
     , mpctrlSpinBufferSegments(new QSpinBox(mpctrlPageTools))
     , mpctrlBtnBuffer(new AntButton(tr("运行缓冲分析"), mpctrlPageTools))
-    , mpctrlBtnOverlay(new AntButton(tr("叠加分析（开发中）"), mpctrlPageTools))
+    , mpctrlComboOverlayOperation(new QComboBox(mpctrlPageTools))
+    , mpctrlComboOverlayTarget(new QComboBox(mpctrlPageTools))
+    , mpctrlBtnOverlay(new AntButton(tr("运行叠加分析"), mpctrlPageTools))
     , mpctrlBtnSpatialQuery(new AntButton(tr("空间查询（开发中）"), mpctrlPageTools))
     , mpctrlBtnRasterCalc(new AntButton(tr("栅格计算（开发中）"), mpctrlPageTools))
     , mpctrlBtnAttributeQuery(new AntButton(tr("属性查询（即将支持）"), mpctrlPageTools))
@@ -94,6 +98,12 @@ AnalysisWorkspaceDockWidget::AnalysisWorkspaceDockWidget(QWidget* _pParent)
     mpctrlSpinBufferDistance->setSingleStep(10.0);
     mpctrlSpinBufferSegments->setRange(1, 64);
     mpctrlSpinBufferSegments->setValue(8);
+    mpctrlComboToolSelector->setMinimumWidth(180);
+    mpctrlComboOverlayOperation->addItem(
+        tr("Intersect"), static_cast<int>(OverlayOperationType::Intersect));
+    mpctrlComboOverlayOperation->addItem(
+        tr("Union"), static_cast<int>(OverlayOperationType::Union));
+    mpctrlComboOverlayTarget->setMinimumWidth(180);
     mpctrlBtnBasicStatistics->setButtonRole(AntButton::Primary);
     mpctrlBtnFrequencyStatistics->setButtonRole(AntButton::Default);
     mpctrlBtnNeighborhood->setButtonRole(AntButton::Default);
@@ -103,45 +113,84 @@ AnalysisWorkspaceDockWidget::AnalysisWorkspaceDockWidget(QWidget* _pParent)
     mpctrlBtnRasterCalc->setButtonRole(AntButton::Quiet);
     mpctrlBtnAttributeQuery->setButtonRole(AntButton::Default);
 
-    QFormLayout* _pStatLayout = new QFormLayout();
-    _pStatLayout->addRow(tr("基础统计"), mpctrlBtnBasicStatistics);
-    _pStatLayout->addRow(tr("频率统计分箱数"), mpctrlSpinFrequencyBins);
-    _pStatLayout->addRow(tr("频率统计"), mpctrlBtnFrequencyStatistics);
+    auto _fnMakeToolPage = [this](QFormLayout* _pFormLayout) -> QWidget* {
+        QWidget* _pPage = new QWidget(mpctrlToolStack);
+        QVBoxLayout* _pPageLayout = new QVBoxLayout(_pPage);
+        _pPageLayout->setContentsMargins(0, 0, 0, 0);
+        _pPageLayout->setSpacing(8);
+        _pPageLayout->addLayout(_pFormLayout);
+        _pPageLayout->addStretch(1);
+        return _pPage;
+    };
 
-    QGroupBox* _pGroupStat = new QGroupBox(tr("Statistical Analysis"), mpctrlPageTools);
-    _pGroupStat->setLayout(_pStatLayout);
+    auto _fnAddToolPage = [this](const QString& _strToolId,
+        const QString& _strToolName,
+        QWidget* _pPage) {
+        mpctrlComboToolSelector->addItem(_strToolName, _strToolId);
+        mpctrlToolStack->addWidget(_pPage);
+    };
 
-    QFormLayout* _pSpatialLayout = new QFormLayout();
-    _pSpatialLayout->addRow(tr("邻域窗口大小"), mpctrlSpinNeighborhoodWindow);
-    _pSpatialLayout->addRow(tr("邻域分析"), mpctrlBtnNeighborhood);
-    _pSpatialLayout->addRow(tr("缓冲距离"), mpctrlSpinBufferDistance);
-    _pSpatialLayout->addRow(tr("圆弧分段数"), mpctrlSpinBufferSegments);
-    _pSpatialLayout->addRow(tr("缓冲分析"), mpctrlBtnBuffer);
-    _pSpatialLayout->addRow(tr("叠加分析"), mpctrlBtnOverlay);
-    _pSpatialLayout->addRow(tr("空间查询"), mpctrlBtnSpatialQuery);
-    _pSpatialLayout->addRow(tr("栅格计算"), mpctrlBtnRasterCalc);
+    QFormLayout* _pBasicLayout = new QFormLayout();
+    _pBasicLayout->addRow(tr("基础统计"), mpctrlBtnBasicStatistics);
+    _fnAddToolPage("basic_statistics", tr("基础统计"),
+        _fnMakeToolPage(_pBasicLayout));
 
-    QGroupBox* _pGroupSpatial = new QGroupBox(tr("Spatial Analysis"), mpctrlPageTools);
-    _pGroupSpatial->setLayout(_pSpatialLayout);
+    QFormLayout* _pFrequencyLayout = new QFormLayout();
+    _pFrequencyLayout->addRow(tr("分箱数"), mpctrlSpinFrequencyBins);
+    _pFrequencyLayout->addRow(tr("频率统计"), mpctrlBtnFrequencyStatistics);
+    _fnAddToolPage("frequency_statistics", tr("频率统计"),
+        _fnMakeToolPage(_pFrequencyLayout));
+
+    QFormLayout* _pNeighborhoodLayout = new QFormLayout();
+    _pNeighborhoodLayout->addRow(tr("窗口大小"), mpctrlSpinNeighborhoodWindow);
+    _pNeighborhoodLayout->addRow(tr("邻域分析"), mpctrlBtnNeighborhood);
+    _fnAddToolPage("neighborhood_analysis", tr("邻域分析"),
+        _fnMakeToolPage(_pNeighborhoodLayout));
+
+    QFormLayout* _pBufferLayout = new QFormLayout();
+    _pBufferLayout->addRow(tr("缓冲距离"), mpctrlSpinBufferDistance);
+    _pBufferLayout->addRow(tr("圆弧分段数"), mpctrlSpinBufferSegments);
+    _pBufferLayout->addRow(tr("缓冲分析"), mpctrlBtnBuffer);
+    _fnAddToolPage("buffer_analysis", tr("缓冲分析"),
+        _fnMakeToolPage(_pBufferLayout));
+
+    QFormLayout* _pOverlayLayout = new QFormLayout();
+    _pOverlayLayout->addRow(tr("操作"), mpctrlComboOverlayOperation);
+    _pOverlayLayout->addRow(tr("叠加图层"), mpctrlComboOverlayTarget);
+    _pOverlayLayout->addRow(tr("叠加分析"), mpctrlBtnOverlay);
+    _fnAddToolPage("overlay_analysis", tr("叠加分析"),
+        _fnMakeToolPage(_pOverlayLayout));
+
+    QFormLayout* _pSpatialQueryLayout = new QFormLayout();
+    _pSpatialQueryLayout->addRow(tr("空间查询"), mpctrlBtnSpatialQuery);
+    _fnAddToolPage("spatial_query", tr("空间查询"),
+        _fnMakeToolPage(_pSpatialQueryLayout));
+
+    QFormLayout* _pRasterCalcLayout = new QFormLayout();
+    _pRasterCalcLayout->addRow(tr("栅格计算"), mpctrlBtnRasterCalc);
+    _fnAddToolPage("raster_calc", tr("栅格计算"),
+        _fnMakeToolPage(_pRasterCalcLayout));
 
     QFormLayout* _pAttributeLayout = new QFormLayout();
     _pAttributeLayout->addRow(tr("属性查询"), mpctrlBtnAttributeQuery);
+    _fnAddToolPage("attribute_query", tr("属性查询"),
+        _fnMakeToolPage(_pAttributeLayout));
 
-    QGroupBox* _pGroupAttribute = new QGroupBox(tr("Attribute Query"), mpctrlPageTools);
-    _pGroupAttribute->setLayout(_pAttributeLayout);
+    QFormLayout* _pToolSelectorLayout = new QFormLayout();
+    _pToolSelectorLayout->addRow(tr("分析方法"), mpctrlComboToolSelector);
 
     QVBoxLayout* _pToolsLayout = new QVBoxLayout(mpctrlPageTools);
     _pToolsLayout->setContentsMargins(8, 8, 8, 8);
     _pToolsLayout->setSpacing(8);
     _pToolsLayout->addWidget(mpctrlLabelToolsHint);
-    _pToolsLayout->addWidget(_pGroupStat);
-    _pToolsLayout->addWidget(_pGroupSpatial);
-    _pToolsLayout->addWidget(_pGroupAttribute);
-    _pToolsLayout->addStretch(1);
+    _pToolsLayout->addLayout(_pToolSelectorLayout);
+    _pToolsLayout->addWidget(mpctrlToolStack, 1);
 
     mpctrlSpinBufferDistance->setEnabled(false);
     mpctrlSpinBufferSegments->setEnabled(false);
     mpctrlBtnBuffer->setEnabled(false);
+    mpctrlComboOverlayOperation->setEnabled(false);
+    mpctrlComboOverlayTarget->setEnabled(false);
     mpctrlBtnOverlay->setEnabled(false);
     mpctrlBtnSpatialQuery->setEnabled(false);
     mpctrlBtnRasterCalc->setEnabled(false);
@@ -201,6 +250,9 @@ AnalysisWorkspaceDockWidget::AnalysisWorkspaceDockWidget(QWidget* _pParent)
 
     connect(mpctrlAssetList, &QListWidget::currentItemChanged,
         this, &AnalysisWorkspaceDockWidget::onAssetListCurrentItemChanged);
+    connect(mpctrlComboToolSelector,
+        QOverload<int>::of(&QComboBox::currentIndexChanged),
+        this, &AnalysisWorkspaceDockWidget::onToolSelectorCurrentIndexChanged);
     connect(mpctrlBtnBasicStatistics, &QPushButton::clicked,
         this, &AnalysisWorkspaceDockWidget::basicStatisticsRequested);
     connect(mpctrlBtnFrequencyStatistics, &QPushButton::clicked,
@@ -216,6 +268,15 @@ AnalysisWorkspaceDockWidget::AnalysisWorkspaceDockWidget(QWidget* _pParent)
             emit bufferAnalysisRequested(
                 mpctrlSpinBufferDistance->value(),
                 mpctrlSpinBufferSegments->value());
+        });
+    connect(mpctrlBtnOverlay, &QPushButton::clicked,
+        this, [this]() {
+            const OverlayOperationType _eOperation =
+                static_cast<OverlayOperationType>(
+                    mpctrlComboOverlayOperation->currentData().toInt());
+            emit overlayAnalysisRequested(
+                mpctrlComboOverlayTarget->currentData().toString(),
+                _eOperation);
         });
     connect(mpctrlBtnAttributeQuery, &QPushButton::clicked,
         this, &AnalysisWorkspaceDockWidget::attributeQueryRequested);
@@ -284,6 +345,8 @@ void AnalysisWorkspaceDockWidget::focusTool(const QString& _strToolId,
     showToolsPage(_strHint.isEmpty()
         ? tr("当前聚焦工具：%1").arg(ToolDisplayName(_strToolId))
         : _strHint);
+
+    selectToolPage(_strToolId);
 
     if (_strToolId == "basic_statistics") {
         mpctrlBtnBasicStatistics->setFocus();
@@ -437,6 +500,15 @@ void AnalysisWorkspaceDockWidget::onHistoryItemCurrentRowChanged(int _nCurrentRo
     mpctrlResultView->setPlainText(_pItem->data(Qt::UserRole).toString());
 }
 
+void AnalysisWorkspaceDockWidget::onToolSelectorCurrentIndexChanged(
+    int _nCurrentIndex)
+{
+    if (_nCurrentIndex < 0 || _nCurrentIndex >= mpctrlToolStack->count()) {
+        return;
+    }
+    mpctrlToolStack->setCurrentIndex(_nCurrentIndex);
+}
+
 void AnalysisWorkspaceDockWidget::refreshAssetList()
 {
     QSignalBlocker _blocker(mpctrlAssetList);
@@ -482,6 +554,10 @@ void AnalysisWorkspaceDockWidget::updateToolStates(
     const bool _bCanAttributeQuery = _assetCurrent.flagsCapabilities.testFlag(
         AnalysisCapability::AttributeQuery);
 
+    refreshOverlayAssetOptions(_assetCurrent);
+    const bool _bHasOverlayTarget =
+        !mpctrlComboOverlayTarget->currentData().toString().trimmed().isEmpty();
+
     mpctrlBtnBasicStatistics->setEnabled(_bHasAsset && _bCanStat);
     mpctrlBtnFrequencyStatistics->setEnabled(_bHasAsset && _bCanStat);
     mpctrlSpinFrequencyBins->setEnabled(_bHasAsset && _bCanStat);
@@ -490,14 +566,19 @@ void AnalysisWorkspaceDockWidget::updateToolStates(
     mpctrlSpinBufferDistance->setEnabled(_bHasAsset && _bCanVector);
     mpctrlSpinBufferSegments->setEnabled(_bHasAsset && _bCanVector);
     mpctrlBtnBuffer->setEnabled(_bHasAsset && _bCanVector);
+    mpctrlComboOverlayOperation->setEnabled(_bHasAsset && _bCanVector);
+    mpctrlComboOverlayTarget->setEnabled(_bHasAsset && _bCanVector && _bHasOverlayTarget);
+    mpctrlBtnOverlay->setEnabled(_bHasAsset && _bCanVector && _bHasOverlayTarget);
     mpctrlBtnAttributeQuery->setEnabled(_bHasAsset && _bCanAttributeQuery);
 
     const QString _strVectorTip = _bCanVector
-        ? tr("当前矢量资产可执行缓冲区分析；叠加/空间查询仍在开发中。")
+        ? tr("当前矢量资产可执行缓冲区分析；叠加分析需要再选择一个矢量资产。")
         : tr("当前所选资产不具备矢量空间分析能力。");
     mpctrlSpinBufferDistance->setToolTip(tr("缓冲距离按源图层 CRS 单位解释。"));
     mpctrlSpinBufferSegments->setToolTip(tr("圆弧分段数用于近似缓冲边界曲线。"));
     mpctrlBtnBuffer->setToolTip(_strVectorTip);
+    mpctrlComboOverlayOperation->setToolTip(tr("选择叠加分析的 Intersect 或 Union 操作。"));
+    mpctrlComboOverlayTarget->setToolTip(tr("选择参与叠加分析的第二个矢量资产。"));
     mpctrlBtnOverlay->setToolTip(_strVectorTip);
     mpctrlBtnSpatialQuery->setToolTip(_strVectorTip);
 
@@ -513,6 +594,66 @@ void AnalysisWorkspaceDockWidget::updateToolStates(
             "当前资产：%1\n"
             "可用能力会自动启用；缓冲距离按源图层 CRS 单位解释。")
             .arg(_assetCurrent.strName));
+    }
+}
+
+void AnalysisWorkspaceDockWidget::refreshOverlayAssetOptions(
+    const AnalysisDataAsset& _assetCurrent)
+{
+    const QString _strPreviousAssetId =
+        mpctrlComboOverlayTarget->currentData().toString();
+
+    QSignalBlocker _blocker(mpctrlComboOverlayTarget);
+    mpctrlComboOverlayTarget->clear();
+
+    if (mpDataRepository == nullptr || _assetCurrent.strAssetId.trimmed().isEmpty()) {
+        mpctrlComboOverlayTarget->addItem(tr("暂无可用叠加资产"), QString());
+        return;
+    }
+
+    const QList<AnalysisDataAsset> _vAssets = mpDataRepository->getAssets();
+    int _nRestoreIndex = -1;
+    for (const AnalysisDataAsset& _assetCandidate : _vAssets) {
+        if (_assetCandidate.strAssetId == _assetCurrent.strAssetId
+            || !_assetCandidate.flagsCapabilities.testFlag(
+                AnalysisCapability::SpatialVector)) {
+            continue;
+        }
+
+        const QString _strLabel = tr("%1 (%2)")
+            .arg(_assetCandidate.strName.isEmpty()
+                ? tr("未命名资产")
+                : _assetCandidate.strName,
+                _assetCandidate.strSourceFormat);
+        mpctrlComboOverlayTarget->addItem(_strLabel, _assetCandidate.strAssetId);
+        if (_assetCandidate.strAssetId == _strPreviousAssetId) {
+            _nRestoreIndex = mpctrlComboOverlayTarget->count() - 1;
+        }
+    }
+
+    if (mpctrlComboOverlayTarget->count() <= 0) {
+        mpctrlComboOverlayTarget->addItem(tr("暂无可用叠加资产"), QString());
+        return;
+    }
+
+    if (_nRestoreIndex >= 0) {
+        mpctrlComboOverlayTarget->setCurrentIndex(_nRestoreIndex);
+    }
+}
+
+void AnalysisWorkspaceDockWidget::selectToolPage(const QString& _strToolId)
+{
+    for (int _nToolIdx = 0;
+        _nToolIdx < mpctrlComboToolSelector->count();
+        ++_nToolIdx) {
+        if (mpctrlComboToolSelector->itemData(_nToolIdx).toString() != _strToolId) {
+            continue;
+        }
+
+        QSignalBlocker _blocker(mpctrlComboToolSelector);
+        mpctrlComboToolSelector->setCurrentIndex(_nToolIdx);
+        mpctrlToolStack->setCurrentIndex(_nToolIdx);
+        return;
     }
 }
 

@@ -32,6 +32,7 @@ src/
 │       ├── analysiscapability.h       # 分析能力位标志，统一描述 Statistical / Spatial / AttributeQuery
 │       ├── dataassettype.h            # 数据资产类型枚举，区分 Raster / Vector / Table / MetadataDocument
 │       ├── maptooltype.h              # 地图交互工具类型枚举
+│       ├── overlayoperationtype.h      # 矢量叠加分析操作枚举，统一描述 Intersect / Union
 │       └── visualizationcharttype.h   # 可视化图表类型枚举
 ├── core/                              # 基础设施与编排层，不直接承载具体业务算法
 │   ├── ai/
@@ -43,7 +44,7 @@ src/
 │   │       ├── systemcontextbuilder.h/cpp # AI system prompt 构建器，提示词已切到数据资产 + 能力模型
 │   │       └── memoryfilemanager.h/cpp    # ET.md / memory/*.md 记忆文件管理
 │   ├── workflow/
-│   │   └── analysisworkflowcoordinator.h/cpp # 分析工作流状态机，负责基础统计/频率统计/邻域/缓冲分析补参
+│   │   └── analysisworkflowcoordinator.h/cpp # 分析工作流状态机，负责基础统计/频率统计/邻域/缓冲/叠加分析补参与操作识别
 │   ├── integration/
 │   │   └── qgsappinitializer.h/cpp    # QGIS 应用初始化/释放管理
 │   └── interfaces/
@@ -59,13 +60,13 @@ src/
 │   │   └── numericdatareader.h/cpp    # 数值数据读取器，负责 CSV / 简单栅格 / 常规栅格第一波段解析
 │   └── analysis/
 │       ├── statisticalanalysisservice.h/cpp # 统计分析能力服务，统一接收数值视图执行基础统计与频率统计
-│       ├── spatialanalysisservice.h/cpp     # 空间分析能力服务，实现栅格邻域分析与矢量缓冲区分析
+│       ├── spatialanalysisservice.h/cpp     # 空间分析能力服务，实现栅格邻域分析、矢量缓冲区分析与矢量 Intersect/Union 叠加分析
 │       └── attributequeryservice.h/cpp      # 属性查询能力占位服务，统一返回“即将支持”结果
 └── ui/                                # 表现层，只负责交互与结果展示
     ├── mainwindow.h/cpp               # 主窗口，负责地图入口/分析入口分流、统一工作区编排与自动刷新
     ├── docks/
     │   ├── aidockwidget.h/cpp         # AI 终端 Dock
-    │   └── analysisworkspacedockwidget.h/cpp # 统一分析工作区 Dock，内含 Data / Tools / Results 三页
+    │   └── analysisworkspacedockwidget.h/cpp # 统一分析工作区 Dock，内含 Data / Tools / Results 三页与 Tools 方法切换参数页
     ├── components/
     │   ├── antbutton.h/cpp            # Qt5 兼容 Ant Design 风格按钮控件
     │   └── imagebutton.h/cpp          # 通用图像按钮控件

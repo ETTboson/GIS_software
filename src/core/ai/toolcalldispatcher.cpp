@@ -13,6 +13,20 @@ ToolCallDispatcher::ToolCallDispatcher(QObject* _pParent)
 {
 }
 
+namespace
+{
+
+bool isValidOverlayOperationValue(const QString& _strOperation)
+{
+    const QString _strNormalized = _strOperation.trimmed().toLower();
+    return _strNormalized.isEmpty()
+        || _strNormalized == "intersect"
+        || _strNormalized == "intersection"
+        || _strNormalized == "union";
+}
+
+} // namespace
+
 void ToolCallDispatcher::setConversationContext(
     ConversationContext* _pConversationContext)
 {
@@ -34,7 +48,8 @@ void ToolCallDispatcher::dispatch(const QString& _strName,
     } else if (_strName == "run_basic_statistics"
         || _strName == "run_frequency_statistics"
         || _strName == "run_neighborhood_analysis"
-        || _strName == "run_buffer_analysis") {
+        || _strName == "run_buffer_analysis"
+        || _strName == "run_overlay_analysis") {
         executeAnalysisTool(_strName, _jsonArgs);
     } else if (_strName == "save_memory") {
         executeSaveMemory(_jsonArgs);
@@ -159,6 +174,38 @@ QJsonArray ToolCallDispatcher::buildToolsDefinition() const
     }
 
     {
+        QJsonObject _overlayAssetProp;
+        _overlayAssetProp["type"] = "string";
+        _overlayAssetProp["description"] =
+            "参与叠加分析的第二个矢量分析资产 ID，必须来自 get_analysis_context 的 assets 列表";
+
+        QJsonObject _operationProp;
+        _operationProp["type"] = "string";
+        _operationProp["enum"] = QJsonArray{ "intersect", "union" };
+        _operationProp["description"] =
+            "叠加操作，可选 intersect 或 union；未提供时默认 intersect";
+
+        QJsonObject _properties;
+        _properties["overlay_asset_id"] = _overlayAssetProp;
+        _properties["operation"] = _operationProp;
+
+        QJsonObject _params;
+        _params["type"] = "object";
+        _params["properties"] = _properties;
+        _params["required"] = QJsonArray{ "overlay_asset_id" };
+
+        QJsonObject _fn;
+        _fn["name"] = "run_overlay_analysis";
+        _fn["description"] = "对当前选中矢量资产与另一个矢量资产执行 Intersect 或 Union 叠加分析，并将结果写出为 GeoJSON 图层。";
+        _fn["parameters"] = _params;
+
+        QJsonObject _tool;
+        _tool["type"] = "function";
+        _tool["function"] = _fn;
+        _jsonTools.append(_tool);
+    }
+
+    {
         QJsonObject _contentProp;
         _contentProp["type"] = "string";
         _contentProp["description"] = "要写入记忆文件的 Markdown 内容";
@@ -266,6 +313,19 @@ void ToolCallDispatcher::executeAnalysisTool(const QString& _strToolName,
             emit toolFailed(_strToolName, tr("参数错误：segments 必须大于 0"));
             return;
         }
+    } else if (_strToolName == "run_overlay_analysis") {
+        const QString _strOverlayAssetId =
+            _jsonArgs["overlay_asset_id"].toString().trimmed();
+        if (_strOverlayAssetId.isEmpty()) {
+            emit toolFailed(_strToolName, tr("参数错误：overlay_asset_id 不能为空"));
+            return;
+        }
+        if (_jsonArgs.contains("operation")
+            && !isValidOverlayOperationValue(_jsonArgs["operation"].toString())) {
+            emit toolFailed(_strToolName,
+                tr("参数错误：operation 必须是 intersect 或 union"));
+            return;
+        }
     }
 
     if (!mpToolHost->executeAnalysisTool(_strToolName, _jsonArgs, _strResult, _strError)) {
@@ -341,6 +401,8 @@ QString ToolCallDispatcher::formatAnalysisContext(const QJsonObject& _jsonContex
         }
         _vLines << QString::fromUtf8("当前资产名称：%1")
             .arg(_jsonCurrentAsset["name"].toString());
+        _vLines << QString::fromUtf8("当前资产 ID：%1")
+            .arg(_jsonCurrentAsset["id"].toString());
         _vLines << QString::fromUtf8("资产类型：%1")
             .arg(_jsonCurrentAsset["asset_type"].toString());
         _vLines << QString::fromUtf8("源格式：%1")
@@ -358,6 +420,13 @@ QString ToolCallDispatcher::formatAnalysisContext(const QJsonObject& _jsonContex
                 .arg(_jsonCurrentAsset["numeric_rows"].toInt())
                 .arg(_jsonCurrentAsset["numeric_cols"].toInt());
         }
+        const QString _strGeomType =
+            _jsonCurrentAsset["vector_geometry_type"].toString().trimmed();
+        if (!_strGeomType.isEmpty()) {
+            _vLines << QString::fromUtf8("矢量几何类型：%1").arg(_strGeomType);
+            _vLines << QString::fromUtf8("矢量要素数：%1")
+                .arg(_jsonCurrentAsset["vector_feature_count"].toInt());
+        }
         const QString _strSummary = _jsonCurrentAsset["summary"].toString().trimmed();
         if (!_strSummary.isEmpty()) {
             _vLines << QString::fromUtf8("资产摘要：%1").arg(_strSummary);
@@ -368,9 +437,10 @@ QString ToolCallDispatcher::formatAnalysisContext(const QJsonObject& _jsonContex
     _vLines << QString::fromUtf8("分析资产数量：%1").arg(_jsonAssets.size());
     for (const QJsonValue& _jsonVal : _jsonAssets) {
         const QJsonObject _jsonAsset = _jsonVal.toObject();
-        _vLines << QString::fromUtf8("- %1 (%2)")
+        _vLines << QString::fromUtf8("- %1 (%2)，ID：%3")
             .arg(_jsonAsset["name"].toString(),
-                _jsonAsset["asset_type"].toString());
+                _jsonAsset["asset_type"].toString(),
+                _jsonAsset["id"].toString());
     }
 
     const QJsonArray _jsonLayers = _jsonContext["layers"].toArray();

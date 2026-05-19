@@ -76,6 +76,7 @@ add_executable(FirstQT
     src/model/enums/analysiscapability.h
     src/model/enums/dataassettype.h
     src/model/enums/maptooltype.h
+    src/model/enums/overlayoperationtype.h
     src/model/enums/visualizationcharttype.h
     src/service/analysis/attributequeryservice.cpp
     src/service/analysis/attributequeryservice.h

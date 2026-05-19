@@ -7,18 +7,31 @@
 #include <QFileInfo>
 #include <QRegularExpression>
 #include <QStandardPaths>
+#include <QVariant>
+#include <QVector>
 #include <QtMath>
 
+#include <qgscoordinatetransform.h>
+#include <qgsexception.h>
 #include <qgsfeature.h>
 #include <qgsfeatureiterator.h>
 #include <qgsfeaturesink.h>
+#include <qgsfield.h>
+#include <qgsfields.h>
 #include <qgsgeometry.h>
 #include <qgsproject.h>
 #include <qgsvectorfilewriter.h>
 #include <qgsvectorlayer.h>
+#include <qgswkbtypes.h>
 
 namespace
 {
+
+struct OverlayPreparedFeature
+{
+    QgsFeature  feature;  // 原始要素属性
+    QgsGeometry geometry; // 已转换到源图层 CRS 且修复后的几何
+};
 
 QString sanitizeFilePart(const QString& _strInput)
 {
@@ -84,6 +97,227 @@ QString buildBufferOutputPath(const AnalysisDataAsset& _assetInput,
             sanitizeFilePart(formatDistanceForPath(_dDistance)));
     return QDir(writableOutputDirectory(_assetInput.strSourcePath))
         .absoluteFilePath(_strFileName);
+}
+
+QString buildOverlayOutputPath(const AnalysisDataAsset& _assetInput,
+    const AnalysisDataAsset& _assetOverlay,
+    OverlayOperationType _eOperation)
+{
+    const QFileInfo _fiSource(_assetInput.strSourcePath);
+    const QFileInfo _fiOverlay(_assetOverlay.strSourcePath);
+    QString _strSourceBaseName = _fiSource.completeBaseName();
+    QString _strOverlayBaseName = _fiOverlay.completeBaseName();
+    if (_strSourceBaseName.trimmed().isEmpty()) {
+        _strSourceBaseName = _assetInput.strName;
+    }
+    if (_strOverlayBaseName.trimmed().isEmpty()) {
+        _strOverlayBaseName = _assetOverlay.strName;
+    }
+
+    const QString _strOperation = (_eOperation == OverlayOperationType::Union)
+        ? QStringLiteral("union")
+        : QStringLiteral("intersect");
+    const QString _strFileName = QStringLiteral("%1_overlay_%2_%3.geojson")
+        .arg(sanitizeFilePart(_strSourceBaseName),
+            sanitizeFilePart(_strOperation),
+            sanitizeFilePart(_strOverlayBaseName));
+    return QDir(writableOutputDirectory(_assetInput.strSourcePath))
+        .absoluteFilePath(_strFileName);
+}
+
+QString overlayOperationDisplayName(OverlayOperationType _eOperation)
+{
+    return (_eOperation == OverlayOperationType::Union)
+        ? QObject::tr("联合")
+        : QObject::tr("交集");
+}
+
+QString buildUniqueFieldName(const QgsFields& _fieldsExisting,
+    const QString& _strPrefix,
+    const QString& _strFieldName)
+{
+    QString _strBaseName = sanitizeFilePart(_strPrefix + _strFieldName);
+    if (_strBaseName.trimmed().isEmpty()) {
+        _strBaseName = sanitizeFilePart(_strPrefix + QStringLiteral("field"));
+    }
+
+    _strBaseName = _strBaseName.left(48);
+    QString _strCandidate = _strBaseName;
+    int _nSuffix = 2;
+    while (_fieldsExisting.indexOf(_strCandidate) >= 0) {
+        _strCandidate = QStringLiteral("%1_%2")
+            .arg(_strBaseName.left(44))
+            .arg(_nSuffix);
+        ++_nSuffix;
+    }
+    return _strCandidate;
+}
+
+QgsFields buildOverlayOutputFields(const QgsFields& _fieldsSource,
+    const QgsFields& _fieldsOverlay)
+{
+    QgsFields _fieldsOutput;
+    for (int _nFieldIdx = 0; _nFieldIdx < _fieldsSource.size(); ++_nFieldIdx) {
+        QgsField _fieldCurrent(_fieldsSource.at(_nFieldIdx));
+        _fieldCurrent.setName(buildUniqueFieldName(
+            _fieldsOutput, QStringLiteral("src_"), _fieldCurrent.name()));
+        _fieldsOutput.append(_fieldCurrent);
+    }
+
+    for (int _nFieldIdx = 0; _nFieldIdx < _fieldsOverlay.size(); ++_nFieldIdx) {
+        QgsField _fieldCurrent(_fieldsOverlay.at(_nFieldIdx));
+        _fieldCurrent.setName(buildUniqueFieldName(
+            _fieldsOutput, QStringLiteral("ovl_"), _fieldCurrent.name()));
+        _fieldsOutput.append(_fieldCurrent);
+    }
+    return _fieldsOutput;
+}
+
+void appendFeatureAttributes(QgsAttributes& _attributesOutput,
+    const QgsFeature* _pFeatureInput,
+    int _nFieldCount)
+{
+    if (_pFeatureInput == nullptr) {
+        for (int _nFieldIdx = 0; _nFieldIdx < _nFieldCount; ++_nFieldIdx) {
+            _attributesOutput.append(QVariant());
+        }
+        return;
+    }
+
+    const QgsAttributes _attributesInput = _pFeatureInput->attributes();
+    for (int _nFieldIdx = 0; _nFieldIdx < _nFieldCount; ++_nFieldIdx) {
+        _attributesOutput.append(_nFieldIdx < _attributesInput.size()
+            ? _attributesInput.at(_nFieldIdx)
+            : QVariant());
+    }
+}
+
+QgsAttributes buildOverlayAttributes(const QgsFeature* _pFeatureSource,
+    int _nSourceFieldCount,
+    const QgsFeature* _pFeatureOverlay,
+    int _nOverlayFieldCount)
+{
+    QgsAttributes _attributesOutput;
+    _attributesOutput.reserve(_nSourceFieldCount + _nOverlayFieldCount);
+    appendFeatureAttributes(_attributesOutput, _pFeatureSource, _nSourceFieldCount);
+    appendFeatureAttributes(_attributesOutput, _pFeatureOverlay, _nOverlayFieldCount);
+    return _attributesOutput;
+}
+
+bool normalizeGeometry(QgsGeometry& _geomInput)
+{
+    if (_geomInput.isNull() || _geomInput.isEmpty()) {
+        return false;
+    }
+    if (!_geomInput.isGeosValid()) {
+        _geomInput = _geomInput.makeValid();
+    }
+    return !_geomInput.isNull() && !_geomInput.isEmpty();
+}
+
+bool transformGeometryToSourceCrs(QgsGeometry& _geomInput,
+    const QgsCoordinateTransform& _ctTransform,
+    bool _bNeedsTransform)
+{
+    if (!_bNeedsTransform) {
+        return true;
+    }
+
+    try {
+        const Qgis::GeometryOperationResult _eTransformResult =
+            _geomInput.transform(_ctTransform);
+        return _eTransformResult == Qgis::GeometryOperationResult::Success;
+    } catch (const QgsCsException&) {
+        return false;
+    }
+}
+
+QVector<OverlayPreparedFeature> collectPreparedFeatures(QgsVectorLayer& _layerInput,
+    const QgsCoordinateTransform& _ctTransform,
+    bool _bNeedsTransform,
+    int& _nSkippedCount)
+{
+    QVector<OverlayPreparedFeature> _vPreparedFeatures;
+    _vPreparedFeatures.reserve(static_cast<int>(qMax(0LL, _layerInput.featureCount())));
+
+    QgsFeature _featureCurrent;
+    QgsFeatureIterator _itFeature = _layerInput.getFeatures();
+    while (_itFeature.nextFeature(_featureCurrent)) {
+        QgsGeometry _geomCurrent = _featureCurrent.geometry();
+        if (!transformGeometryToSourceCrs(
+            _geomCurrent, _ctTransform, _bNeedsTransform)
+            || !normalizeGeometry(_geomCurrent)) {
+            ++_nSkippedCount;
+            continue;
+        }
+
+        OverlayPreparedFeature _preparedCurrent;
+        _preparedCurrent.feature = _featureCurrent;
+        _preparedCurrent.geometry = _geomCurrent;
+        _vPreparedFeatures.append(_preparedCurrent);
+    }
+    return _vPreparedFeatures;
+}
+
+bool geometriesMayIntersect(const QgsGeometry& _geomLeft,
+    const QgsGeometry& _geomRight)
+{
+    return !_geomLeft.isNull()
+        && !_geomLeft.isEmpty()
+        && !_geomRight.isNull()
+        && !_geomRight.isEmpty()
+        && _geomLeft.boundingBoxIntersects(_geomRight)
+        && _geomLeft.intersects(_geomRight);
+}
+
+bool prepareOverlayResultGeometry(QgsGeometry& _geomOutput)
+{
+    return normalizeGeometry(_geomOutput);
+}
+
+bool addOverlayOutputFeature(QgsVectorFileWriter* _pWriter,
+    const QgsFields& _fieldsOutput,
+    QgsGeometry _geomOutput,
+    const QgsAttributes& _attributesOutput)
+{
+    if (_pWriter == nullptr || !prepareOverlayResultGeometry(_geomOutput)) {
+        return false;
+    }
+
+    QgsFeature _featureOutput;
+    _featureOutput.setFields(_fieldsOutput, true);
+    _featureOutput.setAttributes(_attributesOutput);
+    _featureOutput.setGeometry(_geomOutput);
+    return _pWriter->addFeature(_featureOutput);
+}
+
+void accumulateGeometryMetrics(const QgsGeometry& _geomInput,
+    double& _dAreaTotal,
+    double& _dLengthTotal)
+{
+    _dAreaTotal += _geomInput.area();
+    _dLengthTotal += _geomInput.length();
+}
+
+QgsGeometry subtractOverlayGeometry(QgsGeometry _geomBase,
+    const QgsGeometry& _geomSubtract,
+    int& _nSkippedCount)
+{
+    if (!geometriesMayIntersect(_geomBase, _geomSubtract)) {
+        return _geomBase;
+    }
+
+    QgsGeometry _geomDifference = _geomBase.difference(_geomSubtract);
+    if (_geomDifference.isNull()) {
+        ++_nSkippedCount;
+        return QgsGeometry();
+    }
+    if (!_geomDifference.isEmpty()
+        && !prepareOverlayResultGeometry(_geomDifference)) {
+        ++_nSkippedCount;
+        return QgsGeometry();
+    }
+    return _geomDifference;
 }
 
 } // namespace
@@ -357,6 +591,310 @@ void SpatialAnalysisService::runBufferAnalysis(
         .arg(_dAreaMax, 0, 'f', 6)
         .arg(_strOutputPath);
     emit analysisFinished(_result);
+}
+
+void SpatialAnalysisService::runOverlayAnalysis(
+    const AnalysisDataAsset& _assetInput,
+    const AnalysisDataAsset& _assetOverlay,
+    OverlayOperationType _eOperation)
+{
+    if (_assetInput.strSourcePath.trimmed().isEmpty()
+        || _assetOverlay.strSourcePath.trimmed().isEmpty()) {
+        emitFailure(_assetInput, tr("叠加分析需要两个有效的矢量资产源文件"),
+            QStringLiteral("overlay_analysis"));
+        return;
+    }
+
+    if (_assetInput.strAssetId == _assetOverlay.strAssetId
+        || QFileInfo(_assetInput.strSourcePath).absoluteFilePath()
+            == QFileInfo(_assetOverlay.strSourcePath).absoluteFilePath()) {
+        emitFailure(_assetInput, tr("叠加分析需要选择两个不同的矢量资产"),
+            QStringLiteral("overlay_analysis"));
+        return;
+    }
+
+    QgsVectorLayer _layerSource(
+        _assetInput.strSourcePath,
+        QFileInfo(_assetInput.strSourcePath).completeBaseName(),
+        QStringLiteral("ogr"));
+    if (!_layerSource.isValid()) {
+        emitFailure(_assetInput,
+            tr("无法读取源矢量数据：%1").arg(_assetInput.strSourcePath),
+            QStringLiteral("overlay_analysis"));
+        return;
+    }
+
+    QgsVectorLayer _layerOverlay(
+        _assetOverlay.strSourcePath,
+        QFileInfo(_assetOverlay.strSourcePath).completeBaseName(),
+        QStringLiteral("ogr"));
+    if (!_layerOverlay.isValid()) {
+        emitFailure(_assetInput,
+            tr("无法读取叠加矢量数据：%1").arg(_assetOverlay.strSourcePath),
+            QStringLiteral("overlay_analysis"));
+        return;
+    }
+
+    const long long _lSourceTotal = _layerSource.featureCount();
+    const long long _lOverlayTotal = _layerOverlay.featureCount();
+    if (_lSourceTotal <= 0 || _lOverlayTotal <= 0) {
+        emitFailure(_assetInput, tr("叠加分析要求两个矢量图层都包含有效要素"),
+            QStringLiteral("overlay_analysis"));
+        return;
+    }
+
+    emit analysisProgress(0);
+
+    const QgsFields _fieldsOutput = buildOverlayOutputFields(
+        _layerSource.fields(), _layerOverlay.fields());
+    const QString _strOutputPath = buildOverlayOutputPath(
+        _assetInput, _assetOverlay, _eOperation);
+    const QString _strOutputLayerName = QFileInfo(_strOutputPath).completeBaseName();
+
+    QgsVectorFileWriter::SaveVectorOptions _options;
+    _options.driverName = QStringLiteral("GeoJSON");
+    _options.layerName = _strOutputLayerName;
+    _options.fileEncoding = QStringLiteral("UTF-8");
+    _options.actionOnExistingFile = QgsVectorFileWriter::CreateOrOverwriteFile;
+
+    std::unique_ptr<QgsVectorFileWriter> _pWriter(
+        QgsVectorFileWriter::create(
+            _strOutputPath,
+            _fieldsOutput,
+            Qgis::WkbType::Unknown,
+            _layerSource.crs(),
+            QgsProject::instance()->transformContext(),
+            _options));
+
+    if (!_pWriter || _pWriter->hasError() != QgsVectorFileWriter::NoError) {
+        const QString _strError =
+            (_pWriter != nullptr && !_pWriter->errorMessage().trimmed().isEmpty())
+            ? _pWriter->errorMessage()
+            : tr("未知写出错误");
+        emitFailure(_assetInput,
+            tr("创建叠加结果文件失败：%1").arg(_strError),
+            QStringLiteral("overlay_analysis"));
+        return;
+    }
+
+    const bool _bNeedsTransform = _layerSource.crs().isValid()
+        && _layerOverlay.crs().isValid()
+        && _layerSource.crs() != _layerOverlay.crs();
+    const QgsCoordinateTransform _ctOverlayToSource(
+        _layerOverlay.crs(),
+        _layerSource.crs(),
+        QgsProject::instance()->transformContext());
+
+    const QgsCoordinateTransform _ctIdentity(
+        _layerSource.crs(),
+        _layerSource.crs(),
+        QgsProject::instance()->transformContext());
+
+    long long _lPairTestCount = 0;
+    int _nIntersectionCount = 0;
+    int _nSourceOnlyCount = 0;
+    int _nOverlayOnlyCount = 0;
+    int _nSkippedCount = 0;
+    double _dAreaTotal = 0.0;
+    double _dLengthTotal = 0.0;
+
+    const QVector<OverlayPreparedFeature> _vSourceFeatures =
+        collectPreparedFeatures(_layerSource, _ctIdentity, false, _nSkippedCount);
+    const QVector<OverlayPreparedFeature> _vOverlayFeatures =
+        collectPreparedFeatures(_layerOverlay, _ctOverlayToSource,
+            _bNeedsTransform, _nSkippedCount);
+
+    if (_vSourceFeatures.isEmpty() || _vOverlayFeatures.isEmpty()) {
+        _pWriter.reset();
+        emitFailure(_assetInput, tr("叠加分析要求两个矢量图层都包含可用几何"),
+            QStringLiteral("overlay_analysis"));
+        return;
+    }
+
+    for (int _nSourceIdx = 0; _nSourceIdx < _vSourceFeatures.size(); ++_nSourceIdx) {
+        const OverlayPreparedFeature& _preparedSource =
+            _vSourceFeatures.at(_nSourceIdx);
+        QgsGeometry _geomSourceRemainder = _preparedSource.geometry;
+
+        for (const OverlayPreparedFeature& _preparedOverlay : _vOverlayFeatures) {
+            ++_lPairTestCount;
+
+            if (!geometriesMayIntersect(
+                _preparedSource.geometry, _preparedOverlay.geometry)) {
+                continue;
+            }
+
+            QgsGeometry _geomIntersection =
+                _preparedSource.geometry.intersection(_preparedOverlay.geometry);
+            if (!_geomIntersection.isNull()
+                && !_geomIntersection.isEmpty()
+                && prepareOverlayResultGeometry(_geomIntersection)) {
+                const QgsAttributes _attributesOutput = buildOverlayAttributes(
+                    &_preparedSource.feature,
+                    _layerSource.fields().size(),
+                    &_preparedOverlay.feature,
+                    _layerOverlay.fields().size());
+                if (!addOverlayOutputFeature(
+                    _pWriter.get(), _fieldsOutput, _geomIntersection,
+                    _attributesOutput)) {
+                    ++_nSkippedCount;
+                    continue;
+                }
+
+                accumulateGeometryMetrics(
+                    _geomIntersection, _dAreaTotal, _dLengthTotal);
+                ++_nIntersectionCount;
+            } else if (!_geomIntersection.isNull()) {
+                ++_nSkippedCount;
+            }
+
+            if (_eOperation == OverlayOperationType::Union) {
+                _geomSourceRemainder = subtractOverlayGeometry(
+                    _geomSourceRemainder,
+                    _preparedOverlay.geometry,
+                    _nSkippedCount);
+                if (_geomSourceRemainder.isNull() || _geomSourceRemainder.isEmpty()) {
+                    break;
+                }
+            }
+        }
+
+        const int _nProgress = static_cast<int>(
+            qMin(80.0, 80.0 * static_cast<double>(_nSourceIdx + 1)
+                / static_cast<double>(_vSourceFeatures.size())));
+        emit analysisProgress(_nProgress);
+
+        if (_eOperation == OverlayOperationType::Union
+            && !_geomSourceRemainder.isNull()
+            && !_geomSourceRemainder.isEmpty()) {
+            const QgsAttributes _attributesOutput = buildOverlayAttributes(
+                &_preparedSource.feature,
+                _layerSource.fields().size(),
+                nullptr,
+                _layerOverlay.fields().size());
+            if (addOverlayOutputFeature(
+                _pWriter.get(), _fieldsOutput, _geomSourceRemainder,
+                _attributesOutput)) {
+                accumulateGeometryMetrics(
+                    _geomSourceRemainder, _dAreaTotal, _dLengthTotal);
+                ++_nSourceOnlyCount;
+            } else {
+                ++_nSkippedCount;
+            }
+        }
+    }
+
+    if (_eOperation == OverlayOperationType::Union) {
+        for (int _nOverlayIdx = 0;
+            _nOverlayIdx < _vOverlayFeatures.size();
+            ++_nOverlayIdx) {
+            const OverlayPreparedFeature& _preparedOverlay =
+                _vOverlayFeatures.at(_nOverlayIdx);
+            QgsGeometry _geomOverlayRemainder = _preparedOverlay.geometry;
+
+            for (const OverlayPreparedFeature& _preparedSource : _vSourceFeatures) {
+                _geomOverlayRemainder = subtractOverlayGeometry(
+                    _geomOverlayRemainder,
+                    _preparedSource.geometry,
+                    _nSkippedCount);
+                if (_geomOverlayRemainder.isNull()
+                    || _geomOverlayRemainder.isEmpty()) {
+                    break;
+                }
+            }
+
+            if (!_geomOverlayRemainder.isNull()
+                && !_geomOverlayRemainder.isEmpty()) {
+                const QgsAttributes _attributesOutput = buildOverlayAttributes(
+                    nullptr,
+                    _layerSource.fields().size(),
+                    &_preparedOverlay.feature,
+                    _layerOverlay.fields().size());
+                if (addOverlayOutputFeature(
+                    _pWriter.get(), _fieldsOutput, _geomOverlayRemainder,
+                    _attributesOutput)) {
+                    accumulateGeometryMetrics(
+                        _geomOverlayRemainder, _dAreaTotal, _dLengthTotal);
+                    ++_nOverlayOnlyCount;
+                } else {
+                    ++_nSkippedCount;
+                }
+            }
+
+            const int _nProgress = 80 + static_cast<int>(
+                qMin(19.0, 19.0 * static_cast<double>(_nOverlayIdx + 1)
+                    / static_cast<double>(_vOverlayFeatures.size())));
+            emit analysisProgress(_nProgress);
+        }
+    }
+
+    _pWriter.reset();
+
+    const int _nOutputCount =
+        _nIntersectionCount + _nSourceOnlyCount + _nOverlayOnlyCount;
+    if (_nOutputCount <= 0) {
+        const QString _strFailure = (_eOperation == OverlayOperationType::Union)
+            ? tr("叠加联合分析未生成有效结果，请检查两个图层的几何")
+            : tr("叠加分析未找到相交要素，请检查两个图层的空间范围");
+        emitFailure(_assetInput, _strFailure,
+            QStringLiteral("overlay_analysis"));
+        return;
+    }
+
+    emit analysisProgress(100);
+
+    AnalysisResult _result;
+    _result.strType = QStringLiteral("overlay_analysis");
+    _result.strToolId = QStringLiteral("overlay_analysis");
+    _result.strSourceAssetId = _assetInput.strAssetId;
+    _result.strSourceAssetName = tr("%1 × %2").arg(
+        _assetInput.strName, _assetOverlay.strName);
+    _result.bSuccess = true;
+    _result.bHasVisualization = false;
+    _result.bHasOutputLayer = true;
+    _result.strOutputPath = _strOutputPath;
+    _result.strOutputLayerName = _strOutputLayerName;
+    _result.strOutputLayerType = QStringLiteral("vector");
+    _result.strDesc = tr(
+        "叠加分析完成\n"
+        "分析类型：%1\n"
+        "源数据资产：%2\n"
+        "叠加数据资产：%3\n"
+        "源要素数：%4（可用几何：%5）\n"
+        "叠加要素数：%6（可用几何：%7）\n"
+        "候选要素对数：%8\n"
+        "输出相交要素数：%9\n"
+        "输出源独有要素数：%10\n"
+        "输出叠加独有要素数：%11\n"
+        "输出要素总数：%12\n"
+        "跳过要素数：%13\n"
+        "结果面积总和：%14\n"
+        "结果长度总和：%15\n"
+        "输出图层：%16")
+        .arg(overlayOperationDisplayName(_eOperation))
+        .arg(_assetInput.strName)
+        .arg(_assetOverlay.strName)
+        .arg(_lSourceTotal)
+        .arg(_vSourceFeatures.size())
+        .arg(_lOverlayTotal)
+        .arg(_vOverlayFeatures.size())
+        .arg(_lPairTestCount)
+        .arg(_nIntersectionCount)
+        .arg(_nSourceOnlyCount)
+        .arg(_nOverlayOnlyCount)
+        .arg(_nOutputCount)
+        .arg(_nSkippedCount)
+        .arg(_dAreaTotal, 0, 'f', 6)
+        .arg(_dLengthTotal, 0, 'f', 6)
+        .arg(_strOutputPath);
+    emit analysisFinished(_result);
+}
+
+void SpatialAnalysisService::runOverlayIntersectionAnalysis(
+    const AnalysisDataAsset& _assetInput,
+    const AnalysisDataAsset& _assetOverlay)
+{
+    runOverlayAnalysis(_assetInput, _assetOverlay, OverlayOperationType::Intersect);
 }
 
 int SpatialAnalysisService::ValueIndex(int _nRowIdx, int _nColIdx, int _nColCount)

@@ -85,6 +85,22 @@ QString toolDisplayName(const QString& _strToolId)
     return _strToolId;
 }
 
+bool tryParseOverlayOperation(const QString& _strValue,
+    OverlayOperationType& _eOperation)
+{
+    const QString _strNormalized = _strValue.trimmed().toLower();
+    if (_strNormalized.isEmpty() || _strNormalized == "intersect"
+        || _strNormalized == "intersection") {
+        _eOperation = OverlayOperationType::Intersect;
+        return true;
+    }
+    if (_strNormalized == "union") {
+        _eOperation = OverlayOperationType::Union;
+        return true;
+    }
+    return false;
+}
+
 QJsonArray capabilityArrayToJson(AnalysisCapabilities _flagsCapabilities)
 {
     QJsonArray _jsonCaps;
@@ -134,6 +150,8 @@ QJsonObject buildAssetContextObject(const AnalysisDataAsset& _assetInput)
     _jsonAsset["has_numeric_data"] = _assetInput.bHasNumericDataset;
     _jsonAsset["numeric_rows"] = _assetInput.dataNumeric.nRows;
     _jsonAsset["numeric_cols"] = _assetInput.dataNumeric.nCols;
+    _jsonAsset["vector_geometry_type"] = _assetInput.dataVector.strGeometryType;
+    _jsonAsset["vector_feature_count"] = _assetInput.dataVector.nFeatureCount;
     return _jsonAsset;
 }
 
@@ -315,6 +333,37 @@ bool MainWindow::executeAnalysisTool(const QString& _strToolName,
         _configRun.strToolId = "buffer_analysis";
         _configRun.dBufferDistance = _dDistance;
         _configRun.nBufferSegments = _nSegments;
+    } else if (_strToolName == "run_overlay_analysis") {
+        const QString _strOverlayAssetId =
+            _jsonArgs["overlay_asset_id"].toString().trimmed();
+        OverlayOperationType _eOverlayOperation = OverlayOperationType::Intersect;
+        if (_jsonArgs.contains("operation")
+            && !tryParseOverlayOperation(
+                _jsonArgs["operation"].toString(), _eOverlayOperation)) {
+            _strError = tr("参数错误：operation 必须是 intersect 或 union");
+            return false;
+        }
+        if (_strOverlayAssetId.isEmpty()) {
+            _strError = tr("参数错误：overlay_asset_id 不能为空");
+            return false;
+        }
+
+        const AnalysisDataAsset _assetOverlay =
+            mpDataRepository->findAssetById(_strOverlayAssetId);
+        if (_assetOverlay.strAssetId.trimmed().isEmpty()) {
+            _strError = tr("参数错误：未找到 overlay_asset_id 对应的分析资产");
+            return false;
+        }
+        if (!_assetOverlay.flagsCapabilities.testFlag(
+            AnalysisCapability::SpatialVector)) {
+            _strError = tr("参数错误：叠加资产“%1”不是可用矢量资产")
+                .arg(_assetOverlay.strName);
+            return false;
+        }
+
+        _configRun.strToolId = "overlay_analysis";
+        _configRun.strOverlayAssetId = _strOverlayAssetId;
+        _configRun.eOverlayOperation = _eOverlayOperation;
     } else {
         _strError = tr("未知分析工具：%1").arg(_strToolName);
         return false;
@@ -631,6 +680,9 @@ void MainWindow::initConnections()
         &AnalysisWorkspaceDockWidget::bufferAnalysisRequested,
         this, &MainWindow::onBufferAnalysisRequested);
     connect(mpctrlDockAnalysisWorkspace,
+        &AnalysisWorkspaceDockWidget::overlayAnalysisRequested,
+        this, &MainWindow::onOverlayAnalysisRequested);
+    connect(mpctrlDockAnalysisWorkspace,
         &AnalysisWorkspaceDockWidget::attributeQueryRequested,
         this, &MainWindow::onAttributeQueryRequested);
 
@@ -825,6 +877,16 @@ void MainWindow::runToolForAsset(const AnalysisDataAsset& _assetInput,
             _assetInput,
             _configRun.dBufferDistance,
             _configRun.nBufferSegments);
+        return;
+    }
+    if (_configRun.strToolId == "overlay_analysis") {
+        const AnalysisDataAsset _assetOverlay = (mpDataRepository == nullptr)
+            ? AnalysisDataAsset()
+            : mpDataRepository->findAssetById(_configRun.strOverlayAssetId);
+        mpSpatialAnalysisService->runOverlayAnalysis(
+            _assetInput,
+            _assetOverlay,
+            _configRun.eOverlayOperation);
         return;
     }
     if (_configRun.strToolId == "attribute_query") {
@@ -1241,6 +1303,16 @@ void MainWindow::onBufferAnalysisRequested(double _dBufferDistance,
     _configRun.strToolId = "buffer_analysis";
     _configRun.dBufferDistance = _dBufferDistance;
     _configRun.nBufferSegments = _nBufferSegments;
+    runToolForCurrentAsset(_configRun);
+}
+
+void MainWindow::onOverlayAnalysisRequested(const QString& _strOverlayAssetId,
+    OverlayOperationType _eOperation)
+{
+    AnalysisRunConfig _configRun;
+    _configRun.strToolId = "overlay_analysis";
+    _configRun.strOverlayAssetId = _strOverlayAssetId;
+    _configRun.eOverlayOperation = _eOperation;
     runToolForCurrentAsset(_configRun);
 }
 

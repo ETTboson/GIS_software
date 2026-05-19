@@ -6,6 +6,8 @@
 #include <QString>
 #include <QStringList>
 
+#include "model/enums/overlayoperationtype.h"
+
 class IAIToolHost;
 
 // ════════════════════════════════════════════════════════
@@ -24,7 +26,8 @@ public:
         BasicStatistics,
         FrequencyStatistics,
         NeighborhoodAnalysis,
-        BufferAnalysis
+        BufferAnalysis,
+        OverlayAnalysis
     };
 
     enum class AnalysisTurnKind
@@ -147,12 +150,16 @@ private:
         bool bHasBufferDistance = false;                 // 是否已有缓冲距离
         double dBufferDistance = 100.0;                  // 缓冲距离
         int nBufferSegments = 8;                         // 缓冲圆弧分段数
+        bool bHasOverlayAssetId = false;                 // 是否已有叠加资产 ID
+        QString strOverlayAssetId;                       // 叠加分析第二矢量资产 ID
+        OverlayOperationType eOverlayOperation = OverlayOperationType::Intersect; // 叠加操作类型
         QStringList vMissingParams;                     // 当前缺失参数列表
         QString strLastError;                           // 最近错误文本
     };
 
     void inferTaskTypeFromText(const QString& _strUserText);
     void recalculateMissingParams();
+    bool tryAutoSelectSingleOverlayAsset();
     TransitionResult buildExecutionTransition() const;
     TransitionResult applyStateUpdateArgs(const QJsonObject& _jsonArgs);
     QJsonArray extractRecentDialogue(const QJsonArray& _jsonRawHistory,
@@ -160,6 +167,7 @@ private:
     QString buildStateSnapshot(const QString& _strLatestUserText) const;
     QString buildCollectedParamLines() const;
     QString buildMissingParamLines() const;
+    QStringList buildOverlayCandidateLines() const;
     QString currentToolName() const;
     static bool isCancelText(const QString& _strText);
     static bool isCapabilityIntent(const QString& _strText);
@@ -171,6 +179,10 @@ private:
         double& _dBufferDistance);
     static bool tryExtractBufferSegments(const QString& _strText,
         int& _nBufferSegments);
+    static bool tryExtractOverlayAssetId(const QString& _strText,
+        QString& _strOverlayAssetId);
+    static bool tryExtractOverlayOperation(const QString& _strText,
+        OverlayOperationType& _eOperation);
 
     AnalysisWorkflowState mState; // 当前分析工作流状态
     IAIToolHost*          mpToolHost = nullptr; // 宿主桥接接口

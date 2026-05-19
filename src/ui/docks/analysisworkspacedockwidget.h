@@ -5,10 +5,12 @@
 
 #include "model/dto/analysisdataasset.h"
 #include "model/dto/analysisresult.h"
+#include "model/enums/overlayoperationtype.h"
 #include "model/enums/visualizationcharttype.h"
 
 class DataRepository;
 class AntButton;
+class QComboBox;
 class QDoubleSpinBox;
 class QLabel;
 class QListWidget;
@@ -141,6 +143,14 @@ signals:
     void bufferAnalysisRequested(double _dDistance, int _nSegments);
 
     /*
+     * @brief 用户请求执行矢量叠加分析
+     * @param_1 _strOverlayAssetId: 第二个叠加矢量资产 ID
+     * @param_2 _eOperation: 叠加操作类型
+     */
+    void overlayAnalysisRequested(const QString& _strOverlayAssetId,
+        OverlayOperationType _eOperation);
+
+    /*
      * @brief 用户请求打开属性查询占位能力
      */
     void attributeQueryRequested();
@@ -151,6 +161,7 @@ private slots:
     void onCurrentAssetChanged(const AnalysisDataAsset& _assetCurrent);
     void onCurrentAssetCleared();
     void onHistoryItemCurrentRowChanged(int _nCurrentRow);
+    void onToolSelectorCurrentIndexChanged(int _nCurrentIndex);
 
 private:
     /*
@@ -169,6 +180,18 @@ private:
      * @param_1 _assetCurrent: 当前选中的资产
      */
     void updateToolStates(const AnalysisDataAsset& _assetCurrent);
+
+    /*
+     * @brief 刷新叠加分析第二资产下拉框
+     * @param_1 _assetCurrent: 当前源资产
+     */
+    void refreshOverlayAssetOptions(const AnalysisDataAsset& _assetCurrent);
+
+    /*
+     * @brief 按工具标识选择 Tools 参数页
+     * @param_1 _strToolId: 工具标识
+     */
+    void selectToolPage(const QString& _strToolId);
 
     /*
      * @brief 返回图表类型对应的容器页
@@ -193,6 +216,8 @@ private:
 
     QWidget*        mpctrlPageTools;      // Tools 页
     QLabel*         mpctrlLabelToolsHint; // Tools 页提示标签
+    QComboBox*      mpctrlComboToolSelector; // 分析方法选择框
+    QStackedWidget* mpctrlToolStack;      // 分析方法参数页堆栈
     AntButton*      mpctrlBtnBasicStatistics; // 基础统计按钮
     AntButton*      mpctrlBtnFrequencyStatistics; // 频率统计按钮
     QSpinBox*       mpctrlSpinFrequencyBins; // 频率统计分箱数
@@ -201,7 +226,9 @@ private:
     QDoubleSpinBox* mpctrlSpinBufferDistance; // 缓冲距离
     QSpinBox*       mpctrlSpinBufferSegments; // 缓冲圆弧分段数
     AntButton*      mpctrlBtnBuffer;      // 缓冲分析按钮
-    AntButton*      mpctrlBtnOverlay;     // 叠加分析占位按钮
+    QComboBox*      mpctrlComboOverlayOperation; // 叠加操作类型选择框
+    QComboBox*      mpctrlComboOverlayTarget; // 叠加分析第二矢量资产选择框
+    AntButton*      mpctrlBtnOverlay;     // 叠加分析按钮
     AntButton*      mpctrlBtnSpatialQuery; // 空间查询占位按钮
     AntButton*      mpctrlBtnRasterCalc;  // 栅格计算占位按钮
     AntButton*      mpctrlBtnAttributeQuery; // 属性查询占位按钮

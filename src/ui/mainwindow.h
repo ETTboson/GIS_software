@@ -14,6 +14,7 @@
 #include "model/dto/layerinfo.h"
 #include "model/enums/dataassettype.h"
 #include "model/enums/maptooltype.h"
+#include "model/enums/overlayoperationtype.h"
 
 class AIManager;
 class AIDockWidget;
@@ -86,6 +87,8 @@ private:
         int     nNeighborhoodWindow = 3; // 邻域窗口大小
         double  dBufferDistance = 100.0; // 缓冲距离，单位为源图层 CRS 单位
         int     nBufferSegments = 8; // 缓冲圆弧分段数
+        QString strOverlayAssetId;    // 叠加分析第二矢量资产 ID
+        OverlayOperationType eOverlayOperation = OverlayOperationType::Intersect; // 叠加操作类型
     };
 
     void initModules();
@@ -163,6 +166,8 @@ private slots:
     void onFrequencyStatisticsRequested(int _nFrequencyBins);
     void onNeighborhoodAnalysisRequested(int _nNeighborhoodWindow);
     void onBufferAnalysisRequested(double _dBufferDistance, int _nBufferSegments);
+    void onOverlayAnalysisRequested(const QString& _strOverlayAssetId,
+        OverlayOperationType _eOperation);
     void onAttributeQueryRequested();
 
 private:

@@ -10,9 +10,9 @@
 - 地图图层加载：支持通过 QGIS 运行时加载常见矢量、栅格图层并显示在地图画布中。
 - 统一数据资产：通过 `DataService`、`DataFormatRouter` 和 `DataRepository` 将 CSV、栅格、矢量、XML 等输入整理成统一分析资产。
 - 统计分析：支持基础统计、频率统计，并将结果转换为工作区可展示的结构化图表数据。
-- 空间分析：支持栅格邻域分析与矢量缓冲区分析，缓冲结果输出为 GeoJSON 并自动加入地图画布。
+- 空间分析：支持栅格邻域分析、矢量缓冲区分析与矢量 Intersect/Union 叠加分析，矢量结果输出为 GeoJSON 并自动加入地图画布。
 - AI 辅助分析：通过 `AIManager`、`ToolCallDispatcher` 和 `AnalysisWorkflowCoordinator` 识别分析意图、补齐参数并调用宿主分析工具。
-- 统一工作区：`AnalysisWorkspaceDockWidget` 提供 Data、Tools、Results 三页，用于选择资产、运行工具和查看结果。
+- 统一工作区：`AnalysisWorkspaceDockWidget` 提供 Data、Tools、Results 三页，Tools 页通过方法下拉框显示对应参数界面。
 
 ## 技术栈
 

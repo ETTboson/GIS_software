@@ -6,11 +6,12 @@
 #include "model/dto/analysisdataasset.h"
 #include "model/dto/analysisresult.h"
 #include "model/dto/visualizationdata.h"
+#include "model/enums/overlayoperationtype.h"
 
 // ════════════════════════════════════════════════════════
 //  SpatialAnalysisService
 //  空间分析能力服务
-//  提供栅格邻域分析与矢量缓冲区分析，
+//  提供栅格邻域分析、矢量缓冲区分析与矢量叠加分析，
 //  分析结果统一封装为 AnalysisResult 后通过信号返回。
 // ════════════════════════════════════════════════════════
 class SpatialAnalysisService : public QObject
@@ -46,6 +47,24 @@ public:
     void runBufferAnalysis(const AnalysisDataAsset& _assetInput,
         double _dDistance,
         int _nSegments);
+
+    /*
+     * @brief 执行矢量叠加分析
+     * @param_1 _assetInput: 当前源矢量资产
+     * @param_2 _assetOverlay: 参与叠加的第二个矢量资产
+     * @param_3 _eOperation: 叠加操作类型
+     */
+    void runOverlayAnalysis(const AnalysisDataAsset& _assetInput,
+        const AnalysisDataAsset& _assetOverlay,
+        OverlayOperationType _eOperation);
+
+    /*
+     * @brief 执行矢量交集叠加分析
+     * @param_1 _assetInput: 当前源矢量资产
+     * @param_2 _assetOverlay: 参与叠加的第二个矢量资产
+     */
+    void runOverlayIntersectionAnalysis(const AnalysisDataAsset& _assetInput,
+        const AnalysisDataAsset& _assetOverlay);
 
 signals:
     void analysisProgress(int _nPercent);

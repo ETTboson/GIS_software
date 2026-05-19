@@ -18,7 +18,8 @@ bool isFinalExecutionTool(const QString& _strToolName)
         "run_basic_statistics",
         "run_frequency_statistics",
         "run_neighborhood_analysis",
-        "run_buffer_analysis"
+        "run_buffer_analysis",
+        "run_overlay_analysis"
     };
     return S_SET_FINAL_TOOLS.contains(_strToolName);
 }
