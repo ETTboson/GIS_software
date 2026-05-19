@@ -20,6 +20,11 @@ struct SpatialVectorData
     bool        bDerivedFromTable = false; // 是否由表格 XY 列转换得到
     QString     strCoordinateXField;    // 表格来源时的 X 字段名
     QString     strCoordinateYField;    // 表格来源时的 Y 字段名
+    QString     strSourceUri;           // QGIS provider 可直接读取的矢量源 URI
+    QString     strProviderKey;         // QGIS provider 标识，普通矢量与数据库表默认使用 ogr
+    QString     strDatabasePath;        // 来源空间数据库路径，非数据库矢量为空
+    QString     strTableName;           // 来源空间表名，非数据库矢量为空
+    QString     strGeometryColumn;      // 来源空间表几何列名，非数据库矢量为空
     QString     strPreviewSummary;      // 矢量摘要文本
 };
 

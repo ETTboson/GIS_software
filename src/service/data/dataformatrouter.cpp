@@ -2,6 +2,7 @@
 
 #include "csvinspector.h"
 #include "numericdatareader.h"
+#include "spatialdatabaseservice.h"
 #include "xmlinspector.h"
 
 #include <QFileInfo>
@@ -30,7 +31,7 @@ bool isNumericVariantType(QMetaType::Type _eType)
 
 QString buildVectorSummary(const AnalysisDataAsset& _assetVector)
 {
-    return QObject::tr(
+    QString _strSummary = QObject::tr(
         "矢量资产：%1\n"
         "几何类型：%2\n"
         "要素数量：%3\n"
@@ -43,31 +44,51 @@ QString buildVectorSummary(const AnalysisDataAsset& _assetVector)
         .arg(_assetVector.dataVector.vNumericFieldNames.isEmpty()
             ? QObject::tr("无")
             : _assetVector.dataVector.vNumericFieldNames.join(", "));
+    if (!_assetVector.dataVector.strDatabasePath.trimmed().isEmpty()) {
+        _strSummary += QObject::tr(
+            "\n空间数据库：%1\n空间表：%2\n几何列：%3")
+            .arg(_assetVector.dataVector.strDatabasePath,
+                _assetVector.dataVector.strTableName,
+                _assetVector.dataVector.strGeometryColumn.isEmpty()
+                    ? QObject::tr("默认")
+                    : _assetVector.dataVector.strGeometryColumn);
+    }
+    return _strSummary;
 }
 
-bool buildVectorAsset(const QString& _strFilePath,
+bool buildVectorAsset(const QString& _strSourceUri,
+    const QString& _strDisplayName,
+    const QString& _strSourceFormat,
     AnalysisDataAsset& _outAsset,
-    QString& _strError)
+    QString& _strError,
+    const SpatialTableInfo* _pTableInfo = nullptr)
 {
     QgsVectorLayer _layerVector(
-        _strFilePath,
-        QFileInfo(_strFilePath).baseName(),
+        _strSourceUri,
+        _strDisplayName,
         QStringLiteral("ogr"));
     if (!_layerVector.isValid()) {
-        _strError = QObject::tr("无法读取矢量数据：%1").arg(_strFilePath);
+        _strError = QObject::tr("无法读取矢量数据：%1").arg(_strSourceUri);
         return false;
     }
 
     _outAsset = AnalysisDataAsset();
-    _outAsset.strName = QFileInfo(_strFilePath).fileName();
-    _outAsset.strSourcePath = _strFilePath;
-    _outAsset.strSourceFormat = QFileInfo(_strFilePath).suffix().toLower();
+    _outAsset.strName = _strDisplayName;
+    _outAsset.strSourcePath = _strSourceUri;
+    _outAsset.strSourceFormat = _strSourceFormat;
     _outAsset.eAssetType = DataAssetType::Vector;
     _outAsset.bCanAddToMap = true;
     _outAsset.flagsCapabilities |= AnalysisCapability::SpatialVector;
     _outAsset.flagsCapabilities |= AnalysisCapability::AttributeQuery;
     _outAsset.dataVector.strGeometryType = QgsWkbTypes::displayString(_layerVector.wkbType());
     _outAsset.dataVector.nFeatureCount = static_cast<int>(_layerVector.featureCount());
+    _outAsset.dataVector.strSourceUri = _strSourceUri;
+    _outAsset.dataVector.strProviderKey = QStringLiteral("ogr");
+    if (_pTableInfo != nullptr) {
+        _outAsset.dataVector.strDatabasePath = _pTableInfo->strDatabasePath;
+        _outAsset.dataVector.strTableName = _pTableInfo->strTableName;
+        _outAsset.dataVector.strGeometryColumn = _pTableInfo->strGeometryColumn;
+    }
 
     const QgsFields _fields = _layerVector.fields();
     QVector<int> _vnNumericFieldIndices;
@@ -85,8 +106,8 @@ bool buildVectorAsset(const QString& _strFilePath,
     if (!_vnNumericFieldIndices.isEmpty() && _outAsset.dataVector.nFeatureCount > 0) {
         _outAsset.bHasNumericDataset = true;
         _outAsset.flagsCapabilities |= AnalysisCapability::Statistical;
-        _outAsset.dataNumeric.strSourcePath = _strFilePath;
-        _outAsset.dataNumeric.strName = QFileInfo(_strFilePath).fileName();
+        _outAsset.dataNumeric.strSourcePath = _strSourceUri;
+        _outAsset.dataNumeric.strName = _strDisplayName;
         _outAsset.dataNumeric.strFormat = _outAsset.strSourceFormat;
         _outAsset.dataNumeric.nRows = _outAsset.dataVector.nFeatureCount;
         _outAsset.dataNumeric.nCols = _vnNumericFieldIndices.size();
@@ -107,6 +128,55 @@ bool buildVectorAsset(const QString& _strFilePath,
 
     _outAsset.dataVector.strPreviewSummary = buildVectorSummary(_outAsset);
     _outAsset.strSummary = _outAsset.dataVector.strPreviewSummary;
+    return true;
+}
+
+bool buildVectorAssetFromFile(const QString& _strFilePath,
+    AnalysisDataAsset& _outAsset,
+    QString& _strError)
+{
+    return buildVectorAsset(
+        _strFilePath,
+        QFileInfo(_strFilePath).fileName(),
+        QFileInfo(_strFilePath).suffix().toLower(),
+        _outAsset,
+        _strError);
+}
+
+bool buildVectorAssetsFromDatabase(const QString& _strFilePath,
+    QList<AnalysisDataAsset>& _vAssets,
+    QString& _strError)
+{
+    SpatialDatabaseService _databaseService;
+    const QList<SpatialTableInfo> _vTables =
+        _databaseService.listSpatialTables(_strFilePath, _strError);
+    if (!_strError.trimmed().isEmpty()) {
+        return false;
+    }
+    if (_vTables.isEmpty()) {
+        _strError = QObject::tr("空间数据库中没有可加载的空间表：%1")
+            .arg(_strFilePath);
+        return false;
+    }
+
+    const QString _strDatabaseName = QFileInfo(_strFilePath).fileName();
+    for (const SpatialTableInfo& _tableInfo : _vTables) {
+        AnalysisDataAsset _assetTable;
+        QString _strAssetError;
+        const QString _strDisplayName = QObject::tr("%1:%2")
+            .arg(_strDatabaseName, _tableInfo.strTableName);
+        if (!buildVectorAsset(
+            _tableInfo.strSourceUri,
+            _strDisplayName,
+            QStringLiteral("spatialite"),
+            _assetTable,
+            _strAssetError,
+            &_tableInfo)) {
+            _strError = _strAssetError;
+            return false;
+        }
+        _vAssets.append(_assetTable);
+    }
     return true;
 }
 
@@ -177,6 +247,10 @@ bool buildRasterAsset(const QString& _strFilePath,
 
 bool DataFormatRouter::canLoadAsMapLayer(const QString& _strFilePath)
 {
+    if (SpatialDatabaseService::isSupportedDatabasePath(_strFilePath)) {
+        return true;
+    }
+
     const QString _strExt = QFileInfo(_strFilePath).suffix().toLower();
     return _strExt == "shp"
         || _strExt == "geojson"
@@ -189,24 +263,63 @@ bool DataFormatRouter::routeAnalysisInput(const QString& _strFilePath,
     AnalysisDataAsset& _outAsset,
     QString& _strError)
 {
+    QList<AnalysisDataAsset> _vAssets;
+    if (!routeAnalysisInputs(_strFilePath, _vAssets, _strError)) {
+        return false;
+    }
+    if (_vAssets.isEmpty()) {
+        _strError = QObject::tr("未识别到可用分析资产：%1").arg(_strFilePath);
+        return false;
+    }
+
+    _outAsset = _vAssets.first();
+    return true;
+}
+
+bool DataFormatRouter::routeAnalysisInputs(const QString& _strFilePath,
+    QList<AnalysisDataAsset>& _vAssets,
+    QString& _strError)
+{
+    _vAssets.clear();
     if (_strFilePath.trimmed().isEmpty()) {
         _strError = QObject::tr("文件路径为空");
         return false;
     }
 
     const QString _strExt = QFileInfo(_strFilePath).suffix().toLower();
+    if (SpatialDatabaseService::isSupportedDatabasePath(_strFilePath)) {
+        return buildVectorAssetsFromDatabase(_strFilePath, _vAssets, _strError);
+    }
+
+    AnalysisDataAsset _assetSingle;
     if (_strExt == "csv") {
-        return CsvInspector::inspect(_strFilePath, _outAsset, _strError);
+        if (!CsvInspector::inspect(_strFilePath, _assetSingle, _strError)) {
+            return false;
+        }
+        _vAssets.append(_assetSingle);
+        return true;
     }
     if (_strExt == "xml") {
-        return XmlInspector::inspect(_strFilePath, _outAsset, _strError);
+        if (!XmlInspector::inspect(_strFilePath, _assetSingle, _strError)) {
+            return false;
+        }
+        _vAssets.append(_assetSingle);
+        return true;
     }
     if (_strExt == "asc" || _strExt == "txt"
         || _strExt == "tif" || _strExt == "tiff" || _strExt == "img") {
-        return buildRasterAsset(_strFilePath, _outAsset, _strError);
+        if (!buildRasterAsset(_strFilePath, _assetSingle, _strError)) {
+            return false;
+        }
+        _vAssets.append(_assetSingle);
+        return true;
     }
     if (_strExt == "shp" || _strExt == "geojson") {
-        return buildVectorAsset(_strFilePath, _outAsset, _strError);
+        if (!buildVectorAssetFromFile(_strFilePath, _assetSingle, _strError)) {
+            return false;
+        }
+        _vAssets.append(_assetSingle);
+        return true;
     }
 
     _strError = QObject::tr("当前版本暂不支持该分析输入格式：%1").arg(_strExt);

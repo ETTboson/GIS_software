@@ -94,6 +94,11 @@ add_executable(FirstQT
     src/service/data/dataservice.h
     src/service/data/numericdatareader.cpp
     src/service/data/numericdatareader.h
+    src/service/data/spatialdatabaseconnection.cpp
+    src/service/data/spatialdatabaseconnection.h
+    src/service/data/spatialdatabasequery.h
+    src/service/data/spatialdatabaseservice.cpp
+    src/service/data/spatialdatabaseservice.h
     src/service/data/xmlinspector.cpp
     src/service/data/xmlinspector.h
 

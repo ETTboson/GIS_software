@@ -7,6 +7,7 @@
 #include <QStringList>
 #include <qgspointxy.h>
 
+#include "model/dto/layerinfo.h"
 #include "model/enums/maptooltype.h"
 
 // QGIS 前向声明
@@ -69,6 +70,12 @@ public slots:
      * @param_1 _strFilePath: 空间数据文件的绝对路径
      */
     void loadFromPath(const QString& _strFilePath);
+
+    /*
+     * @brief 从图层信息 DTO 加载图层，支持文件图层与空间数据库表
+     * @param_1 _layerInfo: 图层元信息 DTO
+     */
+    void loadLayer(const LayerInfo& _layerInfo);
 
     /*
      * @brief 从画布中移除指定图层

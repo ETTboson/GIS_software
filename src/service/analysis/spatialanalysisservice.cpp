@@ -1,5 +1,7 @@
 #include "spatialanalysisservice.h"
 
+#include "service/data/spatialdatabaseservice.h"
+
 #include <limits>
 #include <memory>
 
@@ -83,46 +85,141 @@ QString writableOutputDirectory(const QString& _strSourcePath)
     return _strFallbackOutDir;
 }
 
-QString buildBufferOutputPath(const AnalysisDataAsset& _assetInput,
-    double _dDistance)
+QString sourceFilePathForAsset(const AnalysisDataAsset& _assetInput)
 {
-    const QFileInfo _fiSource(_assetInput.strSourcePath);
-    QString _strBaseName = _fiSource.completeBaseName();
+    QString _strDatabasePath;
+    QString _strTableName;
+    if (SpatialDatabaseService::parseLayerSourceUri(
+        _assetInput.strSourcePath, _strDatabasePath, _strTableName)) {
+        return _strDatabasePath;
+    }
+    if (!_assetInput.dataVector.strDatabasePath.trimmed().isEmpty()) {
+        return _assetInput.dataVector.strDatabasePath;
+    }
+    return _assetInput.strSourcePath;
+}
+
+QString sourceLayerUriForAsset(const AnalysisDataAsset& _assetInput)
+{
+    if (!_assetInput.dataVector.strSourceUri.trimmed().isEmpty()) {
+        return _assetInput.dataVector.strSourceUri;
+    }
+    return _assetInput.strSourcePath;
+}
+
+QString sourceBaseNameForAsset(const AnalysisDataAsset& _assetInput)
+{
+    QString _strDatabasePath;
+    QString _strTableName;
+    if (SpatialDatabaseService::parseLayerSourceUri(
+        _assetInput.strSourcePath, _strDatabasePath, _strTableName)
+        && !_strTableName.trimmed().isEmpty()) {
+        return _strTableName;
+    }
+    if (!_assetInput.dataVector.strTableName.trimmed().isEmpty()) {
+        return _assetInput.dataVector.strTableName;
+    }
+
+    QString _strBaseName = QFileInfo(sourceFilePathForAsset(_assetInput))
+        .completeBaseName();
     if (_strBaseName.trimmed().isEmpty()) {
         _strBaseName = _assetInput.strName;
     }
-
-    const QString _strFileName = QStringLiteral("%1_buffer_%2.geojson")
-        .arg(sanitizeFilePart(_strBaseName),
-            sanitizeFilePart(formatDistanceForPath(_dDistance)));
-    return QDir(writableOutputDirectory(_assetInput.strSourcePath))
-        .absoluteFilePath(_strFileName);
+    return _strBaseName;
 }
 
-QString buildOverlayOutputPath(const AnalysisDataAsset& _assetInput,
+struct VectorOutputTarget
+{
+    QString strDatabasePath; // 目标 SpatiaLite 数据库路径
+    QString strTableName;    // 目标结果表名
+    QString strSourceUri;    // 目标结果图层 URI
+    QString strLayerName;    // 结果图层显示名
+};
+
+QString defaultResultDatabasePath(const AnalysisDataAsset& _assetInput)
+{
+    return QDir(writableOutputDirectory(sourceFilePathForAsset(_assetInput)))
+        .absoluteFilePath(QStringLiteral("analysis_results.sqlite"));
+}
+
+QString outputDatabasePathForAsset(const AnalysisDataAsset& _assetInput)
+{
+    QString _strDatabasePath;
+    QString _strTableName;
+    if (SpatialDatabaseService::parseLayerSourceUri(
+        _assetInput.strSourcePath, _strDatabasePath, _strTableName)) {
+        return _strDatabasePath;
+    }
+    if (!_assetInput.dataVector.strDatabasePath.trimmed().isEmpty()) {
+        return _assetInput.dataVector.strDatabasePath;
+    }
+    return defaultResultDatabasePath(_assetInput);
+}
+
+VectorOutputTarget buildBufferOutputTarget(const AnalysisDataAsset& _assetInput,
+    double _dDistance)
+{
+    const QString _strBaseName = sourceBaseNameForAsset(_assetInput);
+    const QString _strTableName = SpatialDatabaseService::sanitizeIdentifier(
+        QStringLiteral("%1_buffer_%2")
+            .arg(sanitizeFilePart(_strBaseName),
+                sanitizeFilePart(formatDistanceForPath(_dDistance))));
+
+    VectorOutputTarget _targetOutput;
+    _targetOutput.strDatabasePath = outputDatabasePathForAsset(_assetInput);
+    _targetOutput.strTableName = _strTableName;
+    _targetOutput.strSourceUri = SpatialDatabaseService::buildLayerSourceUri(
+        _targetOutput.strDatabasePath, _targetOutput.strTableName);
+    _targetOutput.strLayerName = _targetOutput.strTableName;
+    return _targetOutput;
+}
+
+VectorOutputTarget buildOverlayOutputTarget(const AnalysisDataAsset& _assetInput,
     const AnalysisDataAsset& _assetOverlay,
     OverlayOperationType _eOperation)
 {
-    const QFileInfo _fiSource(_assetInput.strSourcePath);
-    const QFileInfo _fiOverlay(_assetOverlay.strSourcePath);
-    QString _strSourceBaseName = _fiSource.completeBaseName();
-    QString _strOverlayBaseName = _fiOverlay.completeBaseName();
-    if (_strSourceBaseName.trimmed().isEmpty()) {
-        _strSourceBaseName = _assetInput.strName;
-    }
-    if (_strOverlayBaseName.trimmed().isEmpty()) {
-        _strOverlayBaseName = _assetOverlay.strName;
-    }
-
+    const QString _strSourceBaseName = sourceBaseNameForAsset(_assetInput);
+    const QString _strOverlayBaseName = sourceBaseNameForAsset(_assetOverlay);
     const QString _strOperation = (_eOperation == OverlayOperationType::Union)
         ? QStringLiteral("union")
         : QStringLiteral("intersect");
-    const QString _strFileName = QStringLiteral("%1_overlay_%2_%3.geojson")
-        .arg(sanitizeFilePart(_strSourceBaseName),
-            sanitizeFilePart(_strOperation),
-            sanitizeFilePart(_strOverlayBaseName));
-    return QDir(writableOutputDirectory(_assetInput.strSourcePath))
-        .absoluteFilePath(_strFileName);
+    const QString _strTableName = SpatialDatabaseService::sanitizeIdentifier(
+        QStringLiteral("%1_overlay_%2_%3")
+            .arg(sanitizeFilePart(_strSourceBaseName),
+                sanitizeFilePart(_strOperation),
+                sanitizeFilePart(_strOverlayBaseName)));
+
+    VectorOutputTarget _targetOutput;
+    _targetOutput.strDatabasePath = outputDatabasePathForAsset(_assetInput);
+    _targetOutput.strTableName = _strTableName;
+    _targetOutput.strSourceUri = SpatialDatabaseService::buildLayerSourceUri(
+        _targetOutput.strDatabasePath, _targetOutput.strTableName);
+    _targetOutput.strLayerName = _targetOutput.strTableName;
+    return _targetOutput;
+}
+
+bool resolveWrittenOutputTarget(const VectorOutputTarget& _targetInput,
+    VectorOutputTarget& _targetResolved,
+    QString& _strError)
+{
+    SpatialDatabaseService _databaseService;
+    SpatialTableInfo _tableInfo;
+    if (!_databaseService.getSpatialTableInfo(
+            _targetInput.strDatabasePath,
+            _targetInput.strTableName,
+            _tableInfo,
+            _strError)) {
+        if (_strError.trimmed().isEmpty()) {
+            _strError = QObject::tr("结果已写入数据库，但未能确认空间表注册状态");
+        }
+        return false;
+    }
+
+    _targetResolved = _targetInput;
+    _targetResolved.strTableName = _tableInfo.strTableName;
+    _targetResolved.strSourceUri = _tableInfo.strSourceUri;
+    _targetResolved.strLayerName = _tableInfo.strTableName;
+    return true;
 }
 
 QString overlayOperationDisplayName(OverlayOperationType _eOperation)
@@ -432,7 +529,8 @@ void SpatialAnalysisService::runBufferAnalysis(
     double _dDistance,
     int _nSegments)
 {
-    if (_assetInput.strSourcePath.trimmed().isEmpty()) {
+    const QString _strInputUri = sourceLayerUriForAsset(_assetInput);
+    if (_strInputUri.trimmed().isEmpty()) {
         emitFailure(_assetInput, tr("当前矢量资产没有源文件路径，无法执行缓冲区分析"),
             QStringLiteral("buffer_analysis"));
         return;
@@ -451,12 +549,12 @@ void SpatialAnalysisService::runBufferAnalysis(
     }
 
     QgsVectorLayer _layerVector(
-        _assetInput.strSourcePath,
-        QFileInfo(_assetInput.strSourcePath).completeBaseName(),
+        _strInputUri,
+        sourceBaseNameForAsset(_assetInput),
         QStringLiteral("ogr"));
     if (!_layerVector.isValid()) {
         emitFailure(_assetInput,
-            tr("无法读取矢量数据：%1").arg(_assetInput.strSourcePath),
+            tr("无法读取矢量数据：%1").arg(_strInputUri),
             QStringLiteral("buffer_analysis"));
         return;
     }
@@ -470,19 +568,17 @@ void SpatialAnalysisService::runBufferAnalysis(
 
     emit analysisProgress(0);
 
-    const QString _strOutputPath = buildBufferOutputPath(_assetInput, _dDistance);
-    const QString _strOutputLayerName =
-        QFileInfo(_strOutputPath).completeBaseName();
-
-    QgsVectorFileWriter::SaveVectorOptions _options;
-    _options.driverName = QStringLiteral("GeoJSON");
-    _options.layerName = _strOutputLayerName;
-    _options.fileEncoding = QStringLiteral("UTF-8");
-    _options.actionOnExistingFile = QgsVectorFileWriter::CreateOrOverwriteFile;
+    const VectorOutputTarget _targetOutput =
+        buildBufferOutputTarget(_assetInput, _dDistance);
+    const QFileInfo _fiOutputDatabase(_targetOutput.strDatabasePath);
+    QgsVectorFileWriter::SaveVectorOptions _options =
+        SpatialDatabaseService::buildSpatialiteSaveOptions(
+            _targetOutput.strTableName,
+            _fiOutputDatabase.exists());
 
     std::unique_ptr<QgsVectorFileWriter> _pWriter(
         QgsVectorFileWriter::create(
-            _strOutputPath,
+            _targetOutput.strDatabasePath,
             _layerVector.fields(),
             Qgis::WkbType::MultiPolygon,
             _layerVector.crs(),
@@ -495,7 +591,7 @@ void SpatialAnalysisService::runBufferAnalysis(
             ? _pWriter->errorMessage()
             : tr("未知写出错误");
         emitFailure(_assetInput,
-            tr("创建缓冲结果文件失败：%1").arg(_strError),
+            tr("创建缓冲结果数据库表失败：%1").arg(_strError),
             QStringLiteral("buffer_analysis"));
         return;
     }
@@ -555,6 +651,16 @@ void SpatialAnalysisService::runBufferAnalysis(
         return;
     }
 
+    VectorOutputTarget _targetResolved;
+    QString _strResolveError;
+    if (!resolveWrittenOutputTarget(
+            _targetOutput, _targetResolved, _strResolveError)) {
+        emitFailure(_assetInput,
+            tr("缓冲区结果写入后无法确认空间表：%1").arg(_strResolveError),
+            QStringLiteral("buffer_analysis"));
+        return;
+    }
+
     emit analysisProgress(100);
 
     AnalysisResult _result;
@@ -565,8 +671,8 @@ void SpatialAnalysisService::runBufferAnalysis(
     _result.bSuccess = true;
     _result.bHasVisualization = false;
     _result.bHasOutputLayer = true;
-    _result.strOutputPath = _strOutputPath;
-    _result.strOutputLayerName = _strOutputLayerName;
+    _result.strOutputPath = _targetResolved.strSourceUri;
+    _result.strOutputLayerName = _targetResolved.strLayerName;
     _result.strOutputLayerType = QStringLiteral("vector");
     _result.strDesc = tr(
         "缓冲区分析完成\n"
@@ -579,7 +685,8 @@ void SpatialAnalysisService::runBufferAnalysis(
         "缓冲面积总和：%7\n"
         "最小缓冲面积：%8\n"
         "最大缓冲面积：%9\n"
-        "输出图层：%10")
+        "输出数据库：%10\n"
+        "输出空间表：%11")
         .arg(_assetInput.strName)
         .arg(_dDistance, 0, 'f', 6)
         .arg(_nSegments)
@@ -589,7 +696,8 @@ void SpatialAnalysisService::runBufferAnalysis(
         .arg(_dAreaTotal, 0, 'f', 6)
         .arg(_dAreaMin, 0, 'f', 6)
         .arg(_dAreaMax, 0, 'f', 6)
-        .arg(_strOutputPath);
+        .arg(_targetResolved.strDatabasePath,
+            _targetResolved.strTableName);
     emit analysisFinished(_result);
 }
 
@@ -598,39 +706,40 @@ void SpatialAnalysisService::runOverlayAnalysis(
     const AnalysisDataAsset& _assetOverlay,
     OverlayOperationType _eOperation)
 {
-    if (_assetInput.strSourcePath.trimmed().isEmpty()
-        || _assetOverlay.strSourcePath.trimmed().isEmpty()) {
+    const QString _strSourceUri = sourceLayerUriForAsset(_assetInput);
+    const QString _strOverlayUri = sourceLayerUriForAsset(_assetOverlay);
+    if (_strSourceUri.trimmed().isEmpty()
+        || _strOverlayUri.trimmed().isEmpty()) {
         emitFailure(_assetInput, tr("叠加分析需要两个有效的矢量资产源文件"),
             QStringLiteral("overlay_analysis"));
         return;
     }
 
     if (_assetInput.strAssetId == _assetOverlay.strAssetId
-        || QFileInfo(_assetInput.strSourcePath).absoluteFilePath()
-            == QFileInfo(_assetOverlay.strSourcePath).absoluteFilePath()) {
+        || _strSourceUri.trimmed() == _strOverlayUri.trimmed()) {
         emitFailure(_assetInput, tr("叠加分析需要选择两个不同的矢量资产"),
             QStringLiteral("overlay_analysis"));
         return;
     }
 
     QgsVectorLayer _layerSource(
-        _assetInput.strSourcePath,
-        QFileInfo(_assetInput.strSourcePath).completeBaseName(),
+        _strSourceUri,
+        sourceBaseNameForAsset(_assetInput),
         QStringLiteral("ogr"));
     if (!_layerSource.isValid()) {
         emitFailure(_assetInput,
-            tr("无法读取源矢量数据：%1").arg(_assetInput.strSourcePath),
+            tr("无法读取源矢量数据：%1").arg(_strSourceUri),
             QStringLiteral("overlay_analysis"));
         return;
     }
 
     QgsVectorLayer _layerOverlay(
-        _assetOverlay.strSourcePath,
-        QFileInfo(_assetOverlay.strSourcePath).completeBaseName(),
+        _strOverlayUri,
+        sourceBaseNameForAsset(_assetOverlay),
         QStringLiteral("ogr"));
     if (!_layerOverlay.isValid()) {
         emitFailure(_assetInput,
-            tr("无法读取叠加矢量数据：%1").arg(_assetOverlay.strSourcePath),
+            tr("无法读取叠加矢量数据：%1").arg(_strOverlayUri),
             QStringLiteral("overlay_analysis"));
         return;
     }
@@ -647,19 +756,17 @@ void SpatialAnalysisService::runOverlayAnalysis(
 
     const QgsFields _fieldsOutput = buildOverlayOutputFields(
         _layerSource.fields(), _layerOverlay.fields());
-    const QString _strOutputPath = buildOverlayOutputPath(
+    const VectorOutputTarget _targetOutput = buildOverlayOutputTarget(
         _assetInput, _assetOverlay, _eOperation);
-    const QString _strOutputLayerName = QFileInfo(_strOutputPath).completeBaseName();
-
-    QgsVectorFileWriter::SaveVectorOptions _options;
-    _options.driverName = QStringLiteral("GeoJSON");
-    _options.layerName = _strOutputLayerName;
-    _options.fileEncoding = QStringLiteral("UTF-8");
-    _options.actionOnExistingFile = QgsVectorFileWriter::CreateOrOverwriteFile;
+    const QFileInfo _fiOutputDatabase(_targetOutput.strDatabasePath);
+    QgsVectorFileWriter::SaveVectorOptions _options =
+        SpatialDatabaseService::buildSpatialiteSaveOptions(
+            _targetOutput.strTableName,
+            _fiOutputDatabase.exists());
 
     std::unique_ptr<QgsVectorFileWriter> _pWriter(
         QgsVectorFileWriter::create(
-            _strOutputPath,
+            _targetOutput.strDatabasePath,
             _fieldsOutput,
             Qgis::WkbType::Unknown,
             _layerSource.crs(),
@@ -672,7 +779,7 @@ void SpatialAnalysisService::runOverlayAnalysis(
             ? _pWriter->errorMessage()
             : tr("未知写出错误");
         emitFailure(_assetInput,
-            tr("创建叠加结果文件失败：%1").arg(_strError),
+            tr("创建叠加结果数据库表失败：%1").arg(_strError),
             QStringLiteral("overlay_analysis"));
         return;
     }
@@ -841,6 +948,16 @@ void SpatialAnalysisService::runOverlayAnalysis(
         return;
     }
 
+    VectorOutputTarget _targetResolved;
+    QString _strResolveError;
+    if (!resolveWrittenOutputTarget(
+            _targetOutput, _targetResolved, _strResolveError)) {
+        emitFailure(_assetInput,
+            tr("叠加结果写入后无法确认空间表：%1").arg(_strResolveError),
+            QStringLiteral("overlay_analysis"));
+        return;
+    }
+
     emit analysisProgress(100);
 
     AnalysisResult _result;
@@ -852,8 +969,8 @@ void SpatialAnalysisService::runOverlayAnalysis(
     _result.bSuccess = true;
     _result.bHasVisualization = false;
     _result.bHasOutputLayer = true;
-    _result.strOutputPath = _strOutputPath;
-    _result.strOutputLayerName = _strOutputLayerName;
+    _result.strOutputPath = _targetResolved.strSourceUri;
+    _result.strOutputLayerName = _targetResolved.strLayerName;
     _result.strOutputLayerType = QStringLiteral("vector");
     _result.strDesc = tr(
         "叠加分析完成\n"
@@ -870,7 +987,8 @@ void SpatialAnalysisService::runOverlayAnalysis(
         "跳过要素数：%13\n"
         "结果面积总和：%14\n"
         "结果长度总和：%15\n"
-        "输出图层：%16")
+        "输出数据库：%16\n"
+        "输出空间表：%17")
         .arg(overlayOperationDisplayName(_eOperation))
         .arg(_assetInput.strName)
         .arg(_assetOverlay.strName)
@@ -886,7 +1004,8 @@ void SpatialAnalysisService::runOverlayAnalysis(
         .arg(_nSkippedCount)
         .arg(_dAreaTotal, 0, 'f', 6)
         .arg(_dLengthTotal, 0, 'f', 6)
-        .arg(_strOutputPath);
+        .arg(_targetResolved.strDatabasePath,
+            _targetResolved.strTableName);
     emit analysisFinished(_result);
 }
 

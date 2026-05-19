@@ -9,6 +9,8 @@ resources/
 sample_data/
 ├── sample_table.csv                   # CSV 数值测试数据，适合验证统计分析
 ├── sample_raster.asc                  # 简单栅格测试数据，适合验证邻域分析
+├── sample_spatialite.sqlite           # SpatiaLite 空间数据库测试数据，包含点/面空间表
+├── create_sample_spatialite.sql       # 生成 sample_spatialite.sqlite 的 sqlite3 脚本
 └── README.txt                         # 测试数据说明与预期结果
 
 src/
@@ -52,9 +54,12 @@ src/
 │
 ├── service/                           # 业务逻辑层，负责数据读取、资产组织与分析算法
 │   ├── data/
-│   │   ├── dataservice.h/cpp          # 数据入口服务，拆分 AddLayer 地图链路与 OpenData 分析链路
+│   │   ├── dataservice.h/cpp          # 数据入口服务，统一地图图层与分析资产加载并同步可视化空间数据
 │   │   ├── dataformatrouter.h/cpp     # 统一解析/路由层，按扩展名与内容产出统一分析资产
 │   │   ├── datarepository.h/cpp       # 统一分析资产仓库，维护资产列表与当前选择
+│   │   ├── spatialdatabaseconnection.h/cpp # SpatiaLite/SQLite 空间数据库连接 RAII 管理
+│   │   ├── spatialdatabaseservice.h/cpp    # 空间数据库访问服务，封装空间表枚举、查询、空间 SQL 与结果入库
+│   │   ├── spatialdatabasequery.h     # 空间数据库表、查询条件与 SQL 结果 DTO
 │   │   ├── csvinspector.h/cpp         # CSV 检查器，识别数值列、坐标列并支持表格转点资产
 │   │   ├── xmlinspector.h/cpp         # XML 检查器，识别坐标结构 XML 与元数据 XML
 │   │   └── numericdatareader.h/cpp    # 数值数据读取器，负责 CSV / 简单栅格 / 常规栅格第一波段解析
@@ -63,7 +68,7 @@ src/
 │       ├── spatialanalysisservice.h/cpp     # 空间分析能力服务，实现栅格邻域分析、矢量缓冲区分析与矢量 Intersect/Union 叠加分析
 │       └── attributequeryservice.h/cpp      # 属性查询能力占位服务，统一返回“即将支持”结果
 └── ui/                                # 表现层，只负责交互与结果展示
-    ├── mainwindow.h/cpp               # 主窗口，负责地图入口/分析入口分流、统一工作区编排与自动刷新
+    ├── mainwindow.h/cpp               # 主窗口，负责数据入口调度、统一工作区编排与分析结果自动刷新
     ├── docks/
     │   ├── aidockwidget.h/cpp         # AI 终端 Dock
     │   └── analysisworkspacedockwidget.h/cpp # 统一分析工作区 Dock，内含 Data / Tools / Results 三页与 Tools 方法切换参数页

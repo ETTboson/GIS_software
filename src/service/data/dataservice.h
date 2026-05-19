@@ -8,12 +8,15 @@
 #include "model/dto/analysisdataasset.h"
 #include "model/dto/layerinfo.h"
 #include "model/enums/dataassettype.h"
+#include "service/data/spatialdatabasequery.h"
+
+class SpatialDatabaseService;
 
 // ════════════════════════════════════════════════════════
 //  DataService
 //  职责：统一处理地图图层入口与分析数据入口。
-//        AddLayer 只负责地图图层链路，OpenData 只负责分析资产链路，
-//        并向 MainWindow 发出统一分析资产 DTO。
+//        可视化空间数据会同步发布为地图图层和分析资产，
+//        分析结果图层仍可按地图链路单独加载。
 //  位于 service/data/ 层，不持有任何 UI 对象。
 // ════════════════════════════════════════════════════════
 class DataService : public QObject
@@ -39,7 +42,7 @@ public:
     void loadLayerToMap(const QString& _strFilePath);
 
     /*
-     * @brief 把数据文件送入分析链路
+     * @brief 把数据文件送入分析链路，可视化空间数据会同步发布为地图图层
      * @param_1 _strFilePath: 数据文件的本地绝对路径
      */
     void openDataForAnalysis(const QString& _strFilePath);
@@ -110,11 +113,51 @@ private:
     bool parseGeoJson(const QString& _strFilePath);
 
     /*
+     * @brief 解析并发布空间数据库中的全部空间表图层
+     */
+    bool parseSpatialDatabase(const QString& _strDatabasePath,
+        QString& _strError);
+
+    /*
+     * @brief 解析并发布空间数据库中的指定空间表图层
+     */
+    bool parseSpatialDatabaseTable(const QString& _strDatabasePath,
+        const QString& _strTableName,
+        QString& _strError);
+
+    /*
      * @brief 根据文件路径构造 LayerInfo DTO
      */
     LayerInfo buildLayerInfo(const QString& _strFilePath) const;
 
+    /*
+     * @brief 根据空间表信息构造 LayerInfo DTO
+     */
+    LayerInfo buildLayerInfo(const SpatialTableInfo& _tableInfo) const;
+
+    /*
+     * @brief 根据分析资产构造可加载地图图层 DTO
+     */
+    LayerInfo buildLayerInfo(const AnalysisDataAsset& _assetInput) const;
+
+    /*
+     * @brief 发布图层记录并按需跳过已有图层
+     */
+    bool publishLayer(const LayerInfo& _layerInfo,
+        bool _bSkipExisting);
+
+    /*
+     * @brief 判断图层记录是否已经存在
+     */
+    bool hasLayerRecord(const LayerInfo& _layerInfo) const;
+
+    /*
+     * @brief 构造用于图层去重的稳定键
+     */
+    static QString BuildLayerKey(const LayerInfo& _layerInfo);
+
     QList<LayerInfo> mvLayers; // 当前地图图层列表
+    SpatialDatabaseService* mpSpatialDatabaseService; // 空间数据库访问服务
 };
 
 #endif // DATASERVICE_H_B2C3D4E5F6A1

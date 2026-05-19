@@ -91,27 +91,58 @@ QgsMapCanvas* MapCanvasWidget::mapCanvas() const
 // ════════════════════════════════════════════════════════
 void MapCanvasWidget::loadFromPath(const QString& _strFilePath)
 {
-    if (_strFilePath.isEmpty())
+    LayerInfo _layerInfo;
+    _layerInfo.strFilePath = _strFilePath;
+    _layerInfo.strSourceUri = _strFilePath;
+    _layerInfo.strName = QFileInfo(_strFilePath).baseName();
+    _layerInfo.strType = _strFilePath.toLower().endsWith(".tif")
+        || _strFilePath.toLower().endsWith(".tiff")
+        || _strFilePath.toLower().endsWith(".img")
+        ? QStringLiteral("raster")
+        : QStringLiteral("vector");
+    _layerInfo.strProviderKey = (_layerInfo.strType == QStringLiteral("raster"))
+        ? QStringLiteral("gdal")
+        : QStringLiteral("ogr");
+    _layerInfo.bVisible = true;
+    loadLayer(_layerInfo);
+}
+
+void MapCanvasWidget::loadLayer(const LayerInfo& _layerInfo)
+{
+    const QString _strSourceUri = _layerInfo.strSourceUri.trimmed().isEmpty()
+        ? _layerInfo.strFilePath
+        : _layerInfo.strSourceUri;
+    const QString _strLayerName = _layerInfo.strName.trimmed().isEmpty()
+        ? QFileInfo(_layerInfo.strFilePath).baseName()
+        : _layerInfo.strName;
+    const QString _strProviderKey = _layerInfo.strProviderKey.trimmed().isEmpty()
+        ? QStringLiteral("ogr")
+        : _layerInfo.strProviderKey;
+
+    if (_strSourceUri.isEmpty())
     {
         qWarning() << "[MapCanvasWidget] loadFromPath: empty path.";
         return;
     }
 
     QgsMapLayer* _pLayer = nullptr;
-    const QString _strLower = _strFilePath.toLower();
+    const QString _strLower = _strSourceUri.toLower();
 
     // ── 根据扩展名选择图层类型 ────────────────────────
-    if (_strLower.endsWith(".shp") || _strLower.endsWith(".geojson"))
+    if (_layerInfo.strType == QStringLiteral("vector")
+        || _strLower.endsWith(".shp")
+        || _strLower.endsWith(".geojson")
+        || _strLower.contains(QStringLiteral("|layername=")))
     {
         QgsVectorLayer* _pVecLayer = new QgsVectorLayer(
-            _strFilePath,
-            QFileInfo(_strFilePath).baseName(),
-            QStringLiteral("ogr"));
+            _strSourceUri,
+            _strLayerName,
+            _strProviderKey);
 
         if (!_pVecLayer->isValid())
         {
             qWarning() << "[MapCanvasWidget] Failed to load vector layer:"
-                       << _strFilePath;
+                       << _strSourceUri;
             delete _pVecLayer;
             return;
         }
@@ -122,13 +153,13 @@ void MapCanvasWidget::loadFromPath(const QString& _strFilePath)
              _strLower.endsWith(".img"))
     {
         QgsRasterLayer* _pRasLayer = new QgsRasterLayer(
-            _strFilePath,
-            QFileInfo(_strFilePath).baseName());
+            _strSourceUri,
+            _strLayerName);
 
         if (!_pRasLayer->isValid())
         {
             qWarning() << "[MapCanvasWidget] Failed to load raster layer:"
-                       << _strFilePath;
+                       << _strSourceUri;
             delete _pRasLayer;
             return;
         }
@@ -136,7 +167,7 @@ void MapCanvasWidget::loadFromPath(const QString& _strFilePath)
     }
     else
     {
-        qWarning() << "[MapCanvasWidget] Unsupported file type:" << _strFilePath;
+        qWarning() << "[MapCanvasWidget] Unsupported file type:" << _strSourceUri;
         return;
     }
 

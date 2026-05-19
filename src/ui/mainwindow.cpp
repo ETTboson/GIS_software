@@ -922,9 +922,9 @@ void MainWindow::onOpenData()
         this,
         tr("打开分析数据"),
         QString(),
-        tr("分析数据 (*.csv *.xml *.asc *.txt *.shp *.geojson *.tif *.tiff *.img);;"
+        tr("分析数据 (*.csv *.xml *.asc *.txt *.shp *.geojson *.sqlite *.db *.tif *.tiff *.img);;"
            "CSV 数据 (*.csv);;XML 数据 (*.xml);;栅格数据 (*.asc *.txt *.tif *.tiff *.img);;"
-           "矢量数据 (*.shp *.geojson);;全部文件 (*)"));
+           "矢量数据 (*.shp *.geojson);;空间数据库 (*.sqlite *.db);;全部文件 (*)"));
     if (_strFilePath.isEmpty()) {
         return;
     }
@@ -939,14 +939,15 @@ void MainWindow::onAddLayer()
         this,
         tr("添加图层"),
         QString(),
-        tr("空间图层 (*.shp *.geojson *.tif *.tiff *.img);;"
-           "矢量图层 (*.shp *.geojson);;栅格图层 (*.tif *.tiff *.img);;全部文件 (*)"));
+        tr("空间图层 (*.shp *.geojson *.sqlite *.db *.tif *.tiff *.img);;"
+           "矢量图层 (*.shp *.geojson);;空间数据库 (*.sqlite *.db);;"
+           "栅格图层 (*.tif *.tiff *.img);;全部文件 (*)"));
     if (_strFilePath.isEmpty()) {
         return;
     }
 
-    mpctrlLabelStatus->setText(tr("  正在添加图层...  "));
-    mpDataService->loadLayerToMap(_strFilePath);
+    mpctrlLabelStatus->setText(tr("  正在添加图层并注册分析资产...  "));
+    mpDataService->openDataForAnalysis(_strFilePath);
 }
 
 void MainWindow::onSaveProject()
@@ -1034,7 +1035,7 @@ void MainWindow::onLayerLoaded(const LayerInfo& _layerInfo)
 {
     MapCanvasWidget* _pCanvas = mpMapCanvasManager->activeCanvas();
     if (_pCanvas != nullptr) {
-        _pCanvas->loadFromPath(_layerInfo.strFilePath);
+        _pCanvas->loadLayer(_layerInfo);
     }
 
     mpctrlLabelStatus->setText(tr("  就绪  "));

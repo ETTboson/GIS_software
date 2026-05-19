@@ -2,6 +2,7 @@
 #define DATAFORMATROUTER_H_C0D1E2F3A4B5
 
 #include <QString>
+#include <QList>
 
 #include "model/dto/analysisdataasset.h"
 
@@ -28,6 +29,16 @@ public:
      */
     static bool routeAnalysisInput(const QString& _strFilePath,
         AnalysisDataAsset& _outAsset,
+        QString& _strError);
+
+    /*
+     * @brief 根据文件内容生成一个或多个统一分析资产
+     * @param_1 _strFilePath: 输入文件绝对路径
+     * @param_2 _vAssets: 成功时写出的分析资产列表
+     * @param_3 _strError: 失败时写出的错误信息
+     */
+    static bool routeAnalysisInputs(const QString& _strFilePath,
+        QList<AnalysisDataAsset>& _vAssets,
         QString& _strError);
 
     /*
