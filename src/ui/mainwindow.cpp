@@ -14,6 +14,8 @@
 #include "ui/map/mapcanvaswidget.h"
 #include "ui/visualization/visualizationmanager.h"
 
+#include <memory>
+
 #include <QAbstractButton>
 #include <QAction>
 #include <QFileDialog>
@@ -23,6 +25,7 @@
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QFileInfo>
 #include <QSignalBlocker>
 #include <QStatusBar>
 #include <QStringList>
@@ -33,8 +36,13 @@
 
 #include <qgslayertreemodel.h>
 #include <qgslayertreemapcanvasbridge.h>
+#include <qgsfeature.h>
+#include <qgsfeatureiterator.h>
+#include <qgsfeaturesink.h>
 #include <qgsmaplayer.h>
 #include <qgsproject.h>
+#include <qgsvectorfilewriter.h>
+#include <qgsvectorlayer.h>
 
 namespace
 {
@@ -101,6 +109,35 @@ bool tryParseOverlayOperation(const QString& _strValue,
     return false;
 }
 
+bool isValidQueryOperator(const QString& _strOperatorId)
+{
+    const QString _strNormalized = _strOperatorId.trimmed().toLower();
+    return _strNormalized == QStringLiteral("=")
+        || _strNormalized == QStringLiteral("==")
+        || _strNormalized == QStringLiteral("eq")
+        || _strNormalized == QStringLiteral("!=")
+        || _strNormalized == QStringLiteral("<>")
+        || _strNormalized == QStringLiteral("ne")
+        || _strNormalized == QStringLiteral(">")
+        || _strNormalized == QStringLiteral("gt")
+        || _strNormalized == QStringLiteral(">=")
+        || _strNormalized == QStringLiteral("gte")
+        || _strNormalized == QStringLiteral("<")
+        || _strNormalized == QStringLiteral("lt")
+        || _strNormalized == QStringLiteral("<=")
+        || _strNormalized == QStringLiteral("lte")
+        || _strNormalized == QStringLiteral("contains");
+}
+
+bool isValidSpatialRelation(const QString& _strRelationId)
+{
+    const QString _strNormalized = _strRelationId.trimmed().toLower();
+    return _strNormalized == QStringLiteral("intersects")
+        || _strNormalized == QStringLiteral("intersect")
+        || _strNormalized == QStringLiteral("within")
+        || _strNormalized == QStringLiteral("contains");
+}
+
 QJsonArray capabilityArrayToJson(AnalysisCapabilities _flagsCapabilities)
 {
     QJsonArray _jsonCaps;
@@ -140,6 +177,15 @@ QString capabilityText(AnalysisCapabilities _flagsCapabilities)
 QJsonObject buildAssetContextObject(const AnalysisDataAsset& _assetInput)
 {
     QJsonObject _jsonAsset;
+    QJsonArray _jsonFieldNames;
+    for (const QString& _strFieldName : _assetInput.dataVector.vFieldNames) {
+        _jsonFieldNames.append(_strFieldName);
+    }
+    QJsonArray _jsonNumericFieldNames;
+    for (const QString& _strFieldName : _assetInput.dataVector.vNumericFieldNames) {
+        _jsonNumericFieldNames.append(_strFieldName);
+    }
+
     _jsonAsset["id"] = _assetInput.strAssetId;
     _jsonAsset["name"] = _assetInput.strName;
     _jsonAsset["source_path"] = _assetInput.strSourcePath;
@@ -152,6 +198,12 @@ QJsonObject buildAssetContextObject(const AnalysisDataAsset& _assetInput)
     _jsonAsset["numeric_cols"] = _assetInput.dataNumeric.nCols;
     _jsonAsset["vector_geometry_type"] = _assetInput.dataVector.strGeometryType;
     _jsonAsset["vector_feature_count"] = _assetInput.dataVector.nFeatureCount;
+    _jsonAsset["vector_fields"] = _jsonFieldNames;
+    _jsonAsset["vector_numeric_fields"] = _jsonNumericFieldNames;
+    _jsonAsset["vector_source_uri"] = _assetInput.dataVector.strSourceUri;
+    _jsonAsset["vector_database_path"] = _assetInput.dataVector.strDatabasePath;
+    _jsonAsset["vector_table_name"] = _assetInput.dataVector.strTableName;
+    _jsonAsset["vector_geometry_column"] = _assetInput.dataVector.strGeometryColumn;
     return _jsonAsset;
 }
 
@@ -364,6 +416,56 @@ bool MainWindow::executeAnalysisTool(const QString& _strToolName,
         _configRun.strToolId = "overlay_analysis";
         _configRun.strOverlayAssetId = _strOverlayAssetId;
         _configRun.eOverlayOperation = _eOverlayOperation;
+    } else if (_strToolName == "run_attribute_query") {
+        const QString _strFieldName =
+            _jsonArgs["field_name"].toString().trimmed();
+        const QString _strOperatorId =
+            _jsonArgs["operator"].toString().trimmed();
+        const QString _strValueText = _jsonArgs["value"].toString();
+        if (_strFieldName.isEmpty()) {
+            _strError = tr("参数错误：field_name 不能为空");
+            return false;
+        }
+        if (!isValidQueryOperator(_strOperatorId)) {
+            _strError = tr("参数错误：operator 必须是 =、!=、>、>=、<、<= 或 contains");
+            return false;
+        }
+
+        _configRun.strToolId = "attribute_query";
+        _configRun.strQueryFieldName = _strFieldName;
+        _configRun.strQueryOperatorId = _strOperatorId;
+        _configRun.strQueryValueText = _strValueText;
+    } else if (_strToolName == "run_spatial_query") {
+        const QString _strTargetAssetId =
+            _jsonArgs["target_asset_id"].toString().trimmed();
+        const QString _strRelationId = _jsonArgs.contains("relation")
+            ? _jsonArgs["relation"].toString().trimmed()
+            : QStringLiteral("intersects");
+        if (_strTargetAssetId.isEmpty()) {
+            _strError = tr("参数错误：target_asset_id 不能为空");
+            return false;
+        }
+        if (!isValidSpatialRelation(_strRelationId)) {
+            _strError = tr("参数错误：relation 必须是 intersects、within 或 contains");
+            return false;
+        }
+
+        const AnalysisDataAsset _assetTarget =
+            mpDataRepository->findAssetById(_strTargetAssetId);
+        if (_assetTarget.strAssetId.trimmed().isEmpty()) {
+            _strError = tr("参数错误：未找到 target_asset_id 对应的分析资产");
+            return false;
+        }
+        if (!_assetTarget.flagsCapabilities.testFlag(
+            AnalysisCapability::SpatialVector)) {
+            _strError = tr("参数错误：目标区域资产“%1”不是可用矢量资产")
+                .arg(_assetTarget.strName);
+            return false;
+        }
+
+        _configRun.strToolId = "spatial_query";
+        _configRun.strSpatialTargetAssetId = _strTargetAssetId;
+        _configRun.strSpatialRelationId = _strRelationId;
     } else {
         _strError = tr("未知分析工具：%1").arg(_strToolName);
         return false;
@@ -406,6 +508,16 @@ bool MainWindow::executeAnalysisTool(const QString& _strToolName,
         &SpatialAnalysisService::analysisFailed,
         this,
         _captureResult);
+    const QMetaObject::Connection _okConnAttribute = connect(
+        mpAttributeQueryService,
+        &AttributeQueryService::analysisFinished,
+        this,
+        _captureResult);
+    const QMetaObject::Connection _failConnAttribute = connect(
+        mpAttributeQueryService,
+        &AttributeQueryService::analysisFailed,
+        this,
+        _captureResult);
 
     runToolForAsset(_assetCurrent, _configRun);
 
@@ -413,6 +525,8 @@ bool MainWindow::executeAnalysisTool(const QString& _strToolName,
     disconnect(_failConnStat);
     disconnect(_okConnSpatial);
     disconnect(_failConnSpatial);
+    disconnect(_okConnAttribute);
+    disconnect(_failConnAttribute);
 
     if (!_bCaptured) {
         _strError = tr("分析执行后未返回结果");
@@ -662,6 +776,13 @@ void MainWindow::initConnections()
     connect(mpSpatialAnalysisService, &SpatialAnalysisService::analysisProgress,
         this, &MainWindow::onAnalysisProgress);
 
+    connect(mpAttributeQueryService, &AttributeQueryService::analysisFinished,
+        this, &MainWindow::onAnalysisFinished);
+    connect(mpAttributeQueryService, &AttributeQueryService::analysisFailed,
+        this, &MainWindow::onAnalysisFailed);
+    connect(mpAttributeQueryService, &AttributeQueryService::analysisProgress,
+        this, &MainWindow::onAnalysisProgress);
+
     connect(mpDataRepository, &DataRepository::currentAssetChanged,
         this, &MainWindow::onCurrentAnalysisAssetChanged);
     connect(mpDataRepository, &DataRepository::currentAssetCleared,
@@ -682,6 +803,9 @@ void MainWindow::initConnections()
     connect(mpctrlDockAnalysisWorkspace,
         &AnalysisWorkspaceDockWidget::overlayAnalysisRequested,
         this, &MainWindow::onOverlayAnalysisRequested);
+    connect(mpctrlDockAnalysisWorkspace,
+        &AnalysisWorkspaceDockWidget::spatialQueryRequested,
+        this, &MainWindow::onSpatialQueryRequested);
     connect(mpctrlDockAnalysisWorkspace,
         &AnalysisWorkspaceDockWidget::attributeQueryRequested,
         this, &MainWindow::onAttributeQueryRequested);
@@ -889,8 +1013,22 @@ void MainWindow::runToolForAsset(const AnalysisDataAsset& _assetInput,
             _configRun.eOverlayOperation);
         return;
     }
+    if (_configRun.strToolId == "spatial_query") {
+        const AnalysisDataAsset _assetTarget = (mpDataRepository == nullptr)
+            ? AnalysisDataAsset()
+            : mpDataRepository->findAssetById(_configRun.strSpatialTargetAssetId);
+        mpAttributeQueryService->runSpatialRelationQuery(
+            _assetInput,
+            _assetTarget,
+            _configRun.strSpatialRelationId);
+        return;
+    }
     if (_configRun.strToolId == "attribute_query") {
-        onAnalysisFailed(mpAttributeQueryService->buildPlaceholderResult(_assetInput));
+        mpAttributeQueryService->runAttributeQuery(
+            _assetInput,
+            _configRun.strQueryFieldName,
+            _configRun.strQueryOperatorId,
+            _configRun.strQueryValueText);
         return;
     }
 
@@ -946,8 +1084,8 @@ void MainWindow::onAddLayer()
         return;
     }
 
-    mpctrlLabelStatus->setText(tr("  正在添加图层并注册分析资产...  "));
-    mpDataService->openDataForAnalysis(_strFilePath);
+    mpctrlLabelStatus->setText(tr("  正在添加地图图层...  "));
+    mpDataService->loadLayerToMap(_strFilePath);
 }
 
 void MainWindow::onSaveProject()
@@ -956,6 +1094,95 @@ void MainWindow::onSaveProject()
 
 void MainWindow::onExportResult()
 {
+    if (!mResultLastSuccessful.bSuccess
+        || !mResultLastSuccessful.bHasOutputLayer
+        || mResultLastSuccessful.strOutputPath.trimmed().isEmpty()) {
+        QMessageBox::information(this,
+            tr("导出结果"),
+            tr("当前没有可导出的成功查询/分析结果图层。"));
+        return;
+    }
+
+    const QString _strSuggestedName =
+        mResultLastSuccessful.strOutputLayerName.trimmed().isEmpty()
+        ? QStringLiteral("query_result")
+        : mResultLastSuccessful.strOutputLayerName;
+    const QString _strOutputPath = QFileDialog::getSaveFileName(
+        this,
+        tr("导出查询结果"),
+        QStringLiteral("%1.geojson").arg(_strSuggestedName),
+        tr("GeoJSON (*.geojson);;Shapefile (*.shp)"));
+    if (_strOutputPath.isEmpty()) {
+        return;
+    }
+
+    const QString _strExt = QFileInfo(_strOutputPath).suffix().toLower();
+    const QString _strDriverName = (_strExt == QStringLiteral("shp"))
+        ? QStringLiteral("ESRI Shapefile")
+        : QStringLiteral("GeoJSON");
+
+    QgsVectorLayer _layerSource(
+        mResultLastSuccessful.strOutputPath,
+        _strSuggestedName,
+        QStringLiteral("ogr"));
+    if (!_layerSource.isValid()) {
+        QMessageBox::warning(this,
+            tr("导出失败"),
+            tr("无法读取结果图层：%1").arg(mResultLastSuccessful.strOutputPath));
+        return;
+    }
+
+    QgsVectorFileWriter::SaveVectorOptions _options;
+    _options.driverName = _strDriverName;
+    _options.fileEncoding = QStringLiteral("UTF-8");
+    _options.actionOnExistingFile = QgsVectorFileWriter::CreateOrOverwriteFile;
+
+    std::unique_ptr<QgsVectorFileWriter> _pWriter(
+        QgsVectorFileWriter::create(
+            _strOutputPath,
+            _layerSource.fields(),
+            _layerSource.wkbType(),
+            _layerSource.crs(),
+            QgsProject::instance()->transformContext(),
+            _options));
+
+    if (!_pWriter || _pWriter->hasError() != QgsVectorFileWriter::NoError) {
+        const QString _strError =
+            (_pWriter != nullptr && !_pWriter->errorMessage().trimmed().isEmpty())
+            ? _pWriter->errorMessage()
+            : tr("未知写出错误");
+        QMessageBox::warning(this,
+            tr("导出失败"),
+            tr("创建导出文件失败：%1").arg(_strError));
+        return;
+    }
+
+    int _nExportedCount = 0;
+    QgsFeature _featureCurrent;
+    QgsFeatureIterator _itFeature = _layerSource.getFeatures();
+    while (_itFeature.nextFeature(_featureCurrent)) {
+        if (!_pWriter->addFeature(_featureCurrent)) {
+            QMessageBox::warning(this,
+                tr("导出失败"),
+                tr("写入导出要素失败"));
+            return;
+        }
+        ++_nExportedCount;
+    }
+
+    _pWriter.reset();
+    mpctrlLabelStatus->setText(tr("  已导出结果  "));
+    if (mpctrlLogView != nullptr) {
+        mpctrlLogView->append(
+            tr("[导出] 查询结果已导出: %1（%2 个要素）")
+                .arg(_strOutputPath)
+                .arg(_nExportedCount));
+    }
+    QMessageBox::information(this,
+        tr("导出完成"),
+        tr("已导出 %1 个要素到：\n%2")
+            .arg(_nExportedCount)
+            .arg(_strOutputPath));
 }
 
 void MainWindow::onNavPan()
@@ -1103,6 +1330,7 @@ void MainWindow::onAnalysisAssetReady(const AnalysisDataAsset& _assetReady)
     mpctrlDockAnalysisWorkspace->clearCurrentResult(_strMessage);
     mpVisualizationManager->clearView(_strMessage);
     mstrDisplayedResultAssetId.clear();
+    mResultLastSuccessful = AnalysisResult();
     mpctrlLabelStatus->setText(tr("  就绪  "));
 }
 
@@ -1118,6 +1346,7 @@ void MainWindow::onDataLoadFailed(const QString& _strErrorMsg)
 void MainWindow::onAnalysisFinished(const AnalysisResult& _result)
 {
     mstrDisplayedResultAssetId = _result.strSourceAssetId;
+    mResultLastSuccessful = _result;
     mpctrlLabelStatus->setText(tr("  分析完成  "));
     mpctrlDockAnalysisWorkspace->setCurrentResult(_result);
     mpctrlDockAnalysisWorkspace->addResultHistory(_result);
@@ -1132,7 +1361,7 @@ void MainWindow::onAnalysisFinished(const AnalysisResult& _result)
         && !_result.strOutputPath.trimmed().isEmpty()
         && mpDataService != nullptr) {
         mpctrlLabelStatus->setText(tr("  正在添加结果图层...  "));
-        mpDataService->loadLayerToMap(_result.strOutputPath);
+        mpDataService->loadAnalysisResultLayer(_result);
     }
 
     if (mbHasPendingRun
@@ -1145,6 +1374,7 @@ void MainWindow::onAnalysisFinished(const AnalysisResult& _result)
 void MainWindow::onAnalysisFailed(const AnalysisResult& _result)
 {
     mstrDisplayedResultAssetId = _result.strSourceAssetId;
+    mResultLastSuccessful = AnalysisResult();
     mpctrlLabelStatus->setText(tr("  分析失败  "));
     mpctrlDockAnalysisWorkspace->setCurrentResult(_result);
     mpctrlDockAnalysisWorkspace->addResultHistory(_result);
@@ -1196,6 +1426,7 @@ void MainWindow::onCurrentAnalysisAssetChanged(const AnalysisDataAsset& _assetCu
     mpctrlDockAnalysisWorkspace->clearCurrentResult(_strMessage);
     mpVisualizationManager->clearView(_strMessage);
     mstrDisplayedResultAssetId.clear();
+    mResultLastSuccessful = AnalysisResult();
 }
 
 void MainWindow::onCurrentAnalysisAssetCleared()
@@ -1204,6 +1435,7 @@ void MainWindow::onCurrentAnalysisAssetCleared()
     mpctrlDockAnalysisWorkspace->clearCurrentResult(_strMessage);
     mpVisualizationManager->clearView(_strMessage);
     mstrDisplayedResultAssetId.clear();
+    mResultLastSuccessful = AnalysisResult();
 }
 
 void MainWindow::onLayerTreeContextMenuRequested(const QPoint& _posMenu)
@@ -1317,9 +1549,24 @@ void MainWindow::onOverlayAnalysisRequested(const QString& _strOverlayAssetId,
     runToolForCurrentAsset(_configRun);
 }
 
-void MainWindow::onAttributeQueryRequested()
+void MainWindow::onSpatialQueryRequested(const QString& _strTargetAssetId,
+    const QString& _strRelationId)
+{
+    AnalysisRunConfig _configRun;
+    _configRun.strToolId = "spatial_query";
+    _configRun.strSpatialTargetAssetId = _strTargetAssetId;
+    _configRun.strSpatialRelationId = _strRelationId;
+    runToolForCurrentAsset(_configRun);
+}
+
+void MainWindow::onAttributeQueryRequested(const QString& _strFieldName,
+    const QString& _strOperatorId,
+    const QString& _strValueText)
 {
     AnalysisRunConfig _configRun;
     _configRun.strToolId = "attribute_query";
+    _configRun.strQueryFieldName = _strFieldName;
+    _configRun.strQueryOperatorId = _strOperatorId;
+    _configRun.strQueryValueText = _strValueText;
     runToolForCurrentAsset(_configRun);
 }

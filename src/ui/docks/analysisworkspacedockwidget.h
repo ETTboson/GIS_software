@@ -13,6 +13,7 @@ class AntButton;
 class QComboBox;
 class QDoubleSpinBox;
 class QLabel;
+class QLineEdit;
 class QListWidget;
 class QListWidgetItem;
 class QSpinBox;
@@ -151,9 +152,22 @@ signals:
         OverlayOperationType _eOperation);
 
     /*
-     * @brief 用户请求打开属性查询占位能力
+     * @brief 用户请求执行空间关系查询
+     * @param_1 _strTargetAssetId: 指定区域矢量资产 ID
+     * @param_2 _strRelationId: 空间关系标识
      */
-    void attributeQueryRequested();
+    void spatialQueryRequested(const QString& _strTargetAssetId,
+        const QString& _strRelationId);
+
+    /*
+     * @brief 用户请求执行属性查询
+     * @param_1 _strFieldName: 字段名
+     * @param_2 _strOperatorId: 运算符标识
+     * @param_3 _strValueText: 查询值文本
+     */
+    void attributeQueryRequested(const QString& _strFieldName,
+        const QString& _strOperatorId,
+        const QString& _strValueText);
 
 private slots:
     void onAssetListCurrentItemChanged(QListWidgetItem* _pCurrent,
@@ -188,6 +202,18 @@ private:
     void refreshOverlayAssetOptions(const AnalysisDataAsset& _assetCurrent);
 
     /*
+     * @brief 刷新属性查询字段下拉框
+     * @param_1 _assetCurrent: 当前源资产
+     */
+    void refreshAttributeFieldOptions(const AnalysisDataAsset& _assetCurrent);
+
+    /*
+     * @brief 刷新空间查询目标区域资产下拉框
+     * @param_1 _assetCurrent: 当前源资产
+     */
+    void refreshSpatialQueryTargetOptions(const AnalysisDataAsset& _assetCurrent);
+
+    /*
      * @brief 按工具标识选择 Tools 参数页
      * @param_1 _strToolId: 工具标识
      */
@@ -204,6 +230,12 @@ private:
      * @param_1 _strToolId: 工具标识
      */
     static QString ToolDisplayName(const QString& _strToolId);
+
+    /*
+     * @brief 判断资产是否适合作为空间查询区域目标
+     * @param_1 _assetInput: 候选分析资产
+     */
+    static bool IsAreaVectorAsset(const AnalysisDataAsset& _assetInput);
 
     DataRepository* mpDataRepository;     // 统一分析资产仓库
     QWidget*        mpctrlContainer;      // Dock 主容器
@@ -229,9 +261,14 @@ private:
     QComboBox*      mpctrlComboOverlayOperation; // 叠加操作类型选择框
     QComboBox*      mpctrlComboOverlayTarget; // 叠加分析第二矢量资产选择框
     AntButton*      mpctrlBtnOverlay;     // 叠加分析按钮
-    AntButton*      mpctrlBtnSpatialQuery; // 空间查询占位按钮
+    QComboBox*      mpctrlComboSpatialRelation; // 空间查询关系选择框
+    QComboBox*      mpctrlComboSpatialTarget; // 空间查询指定区域资产选择框
+    AntButton*      mpctrlBtnSpatialQuery; // 空间查询按钮
     AntButton*      mpctrlBtnRasterCalc;  // 栅格计算占位按钮
-    AntButton*      mpctrlBtnAttributeQuery; // 属性查询占位按钮
+    QComboBox*      mpctrlComboAttributeField; // 属性查询字段选择框
+    QComboBox*      mpctrlComboAttributeOperator; // 属性查询运算符选择框
+    QLineEdit*      mpctrlEditAttributeValue; // 属性查询值输入框
+    AntButton*      mpctrlBtnAttributeQuery; // 属性查询按钮
 
     QWidget*        mpctrlPageResults;    // Results 页
     QTextEdit*      mpctrlResultView;     // 文本结果区

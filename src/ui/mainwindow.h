@@ -89,6 +89,11 @@ private:
         int     nBufferSegments = 8; // 缓冲圆弧分段数
         QString strOverlayAssetId;    // 叠加分析第二矢量资产 ID
         OverlayOperationType eOverlayOperation = OverlayOperationType::Intersect; // 叠加操作类型
+        QString strQueryFieldName;    // 属性查询字段名
+        QString strQueryOperatorId;   // 属性查询运算符标识
+        QString strQueryValueText;    // 属性查询值文本
+        QString strSpatialTargetAssetId; // 空间查询指定区域资产 ID
+        QString strSpatialRelationId; // 空间查询关系标识
     };
 
     void initModules();
@@ -168,7 +173,11 @@ private slots:
     void onBufferAnalysisRequested(double _dBufferDistance, int _nBufferSegments);
     void onOverlayAnalysisRequested(const QString& _strOverlayAssetId,
         OverlayOperationType _eOperation);
-    void onAttributeQueryRequested();
+    void onSpatialQueryRequested(const QString& _strTargetAssetId,
+        const QString& _strRelationId);
+    void onAttributeQueryRequested(const QString& _strFieldName,
+        const QString& _strOperatorId,
+        const QString& _strValueText);
 
 private:
     Ui::MainWindow*              mpUI;
@@ -197,6 +206,7 @@ private:
     AnalysisRunConfig            mConfigPendingRun;        // 待确认运行配置
     QMap<QString, AnalysisRunConfig> mmapLastSuccessfulRuns; // 按资产缓存的最近成功分析配置
     QString                      mstrDisplayedResultAssetId; // 当前结果区正在显示的资产 ID
+    AnalysisResult              mResultLastSuccessful; // 最近一次成功分析结果，供导出使用
 };
 
 #endif // MAINWINDOW_H_A1B2C3D4E5F6

@@ -19,14 +19,13 @@ bool containsCoordinatePattern(const QString& _strContentLower)
         || (_strContentLower.contains(" longitude=\"") && _strContentLower.contains(" latitude=\""));
 }
 
-QString buildUnsupportedXmlHint(const QString& _strRootName,
-    const QString& _strPreview)
+QString previewText(const QString& _strText)
 {
-    return QObject::tr(
-        "暂不支持该 XML 结构。\n"
-        "根节点：%1\n"
-        "结构摘要：%2")
-        .arg(_strRootName, _strPreview);
+    const QString _strClean = _strText.simplified();
+    if (_strClean.size() <= 80) {
+        return _strClean;
+    }
+    return _strClean.left(77) + QStringLiteral("...");
 }
 
 } // namespace
@@ -52,6 +51,8 @@ bool XmlInspector::inspect(const QString& _strFilePath,
     QXmlStreamReader _xmlReader(_strContent);
     QString _strRootName;
     QStringList _vElementNames;
+    QStringList _vPath;
+    QStringList _vLeafValueLines;
     while (!_xmlReader.atEnd()) {
         _xmlReader.readNext();
         if (_xmlReader.isStartElement()) {
@@ -59,8 +60,19 @@ bool XmlInspector::inspect(const QString& _strFilePath,
             if (_strRootName.isEmpty()) {
                 _strRootName = _strElementName;
             }
+            _vPath.append(_strElementName);
             if (_vElementNames.size() < 8) {
                 _vElementNames.append(_strElementName);
+            }
+        } else if (_xmlReader.isCharacters() && !_xmlReader.isWhitespace()) {
+            const QString _strValue = previewText(_xmlReader.text().toString());
+            if (!_strValue.isEmpty() && _vLeafValueLines.size() < 8) {
+                _vLeafValueLines.append(QObject::tr("%1：%2")
+                    .arg(_vPath.join("/"), _strValue));
+            }
+        } else if (_xmlReader.isEndElement()) {
+            if (!_vPath.isEmpty()) {
+                _vPath.removeLast();
             }
         }
     }
@@ -93,30 +105,21 @@ bool XmlInspector::inspect(const QString& _strFilePath,
         return true;
     }
 
-    const bool _bLooksLikeMetadata =
-        _strContentLower.contains("<metadata")
-        || _strContentLower.contains("<property")
-        || _strContentLower.contains("<item")
-        || _strContentLower.contains("<field")
-        || _strContentLower.contains("<value");
-
-    if (_bLooksLikeMetadata) {
-        _outAsset.eAssetType = DataAssetType::MetadataDocument;
-        _outAsset.dataMetadata.strRootName = _strRootName;
-        _outAsset.dataMetadata.vSummaryLines = QStringList{
-            QObject::tr("根节点：%1").arg(_strRootName),
-            QObject::tr("结构摘要：%1").arg(_strPreview)
-        };
-        _outAsset.dataMetadata.strPreviewSummary = QObject::tr(
-            "元数据文档：%1\n"
-            "根节点：%2\n"
-            "结构摘要：%3\n"
-            "当前版本仅提供文档摘要与后续转换入口。")
-            .arg(_outAsset.strName, _strRootName, _strPreview);
-        _outAsset.strSummary = _outAsset.dataMetadata.strPreviewSummary;
-        return true;
+    QStringList _vSummaryLines{
+        QObject::tr("根节点：%1").arg(_strRootName),
+        QObject::tr("结构摘要：%1").arg(_strPreview)
+    };
+    if (!_vLeafValueLines.isEmpty()) {
+        _vSummaryLines.append(QObject::tr("键值摘要："));
+        _vSummaryLines.append(_vLeafValueLines);
     }
 
-    _strError = buildUnsupportedXmlHint(_strRootName, _strPreview);
-    return false;
+    _outAsset.eAssetType = DataAssetType::MetadataDocument;
+    _outAsset.dataMetadata.strRootName = _strRootName;
+    _outAsset.dataMetadata.vSummaryLines = _vSummaryLines;
+    _outAsset.dataMetadata.strPreviewSummary = QObject::tr(
+        "元数据文档：%1\n%2")
+        .arg(_outAsset.strName, _vSummaryLines.join("\n"));
+    _outAsset.strSummary = _outAsset.dataMetadata.strPreviewSummary;
+    return true;
 }

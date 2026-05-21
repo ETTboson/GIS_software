@@ -69,6 +69,17 @@ void DataService::loadLayerToMap(const QString& _strFilePath)
     publishLayer(buildLayerInfo(_strFilePath), false);
 }
 
+void DataService::loadAnalysisResultLayer(const AnalysisResult& _resultInput)
+{
+    if (!_resultInput.bHasOutputLayer
+        || _resultInput.strOutputPath.trimmed().isEmpty()) {
+        emit dataLoadFailed(tr("当前分析结果没有可加载的输出图层"));
+        return;
+    }
+
+    publishLayer(buildLayerInfo(_resultInput), false);
+}
+
 void DataService::openDataForAnalysis(const QString& _strFilePath)
 {
     QList<AnalysisDataAsset> _vAssetsReady;
@@ -254,6 +265,38 @@ LayerInfo DataService::buildLayerInfo(const AnalysisDataAsset& _assetInput) cons
     if (!_assetInput.strName.trimmed().isEmpty()) {
         _layerInfo.strName = _assetInput.strName;
     }
+    return _layerInfo;
+}
+
+LayerInfo DataService::buildLayerInfo(const AnalysisResult& _resultInput) const
+{
+    const QString _strSourceUri = _resultInput.strOutputPath.trimmed();
+    QString _strDatabasePath;
+    QString _strTableName;
+
+    LayerInfo _layerInfo;
+    _layerInfo.strSourceUri = _strSourceUri;
+    _layerInfo.strProviderKey = QStringLiteral("ogr");
+    _layerInfo.strType = _resultInput.strOutputLayerType.trimmed().isEmpty()
+        ? QStringLiteral("vector")
+        : _resultInput.strOutputLayerType;
+    _layerInfo.strName = _resultInput.strOutputLayerName.trimmed().isEmpty()
+        ? QFileInfo(_strSourceUri).completeBaseName()
+        : _resultInput.strOutputLayerName;
+    _layerInfo.bVisible = true;
+    _layerInfo.bIsAnalysisResult = true;
+    _layerInfo.bUseHighlightStyle = _resultInput.strToolId == QStringLiteral("attribute_query")
+        || _resultInput.strToolId == QStringLiteral("spatial_query");
+
+    if (SpatialDatabaseService::parseLayerSourceUri(
+            _strSourceUri, _strDatabasePath, _strTableName)) {
+        _layerInfo.strFilePath = _strDatabasePath;
+        _layerInfo.strDatabasePath = _strDatabasePath;
+        _layerInfo.strTableName = _strTableName;
+    } else {
+        _layerInfo.strFilePath = _strSourceUri;
+    }
+
     return _layerInfo;
 }
 

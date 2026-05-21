@@ -21,7 +21,7 @@ src/
 │   │   ├── analysisdataasset.h        # 统一分析资产 DTO，承载类型、能力集合与各类载荷
 │   │   ├── analysisresult.h           # 统一分析结果 DTO，补充 sourceAssetId/toolId 与输出图层路径
 │   │   ├── chatmessage.h              # AI 对话消息 DTO
-│   │   ├── layerinfo.h                # 图层信息 DTO
+│   │   ├── layerinfo.h                # 图层信息 DTO，包含分析结果与高亮渲染标记
 │   │   ├── metadatadocument.h         # XML 元数据文档载荷 DTO
 │   │   ├── numericdataset.h           # 统一数值视图 DTO，供统计/邻域分析共享
 │   │   ├── spatialrasterdata.h        # 栅格资产载荷 DTO
@@ -41,12 +41,12 @@ src/
 │   │   ├── aimanager.h/cpp            # AI 对话总协调层，负责普通链/分析状态更新链切换与 tool_call 分发
 │   │   ├── conversationcontext.h/cpp  # 对话上下文、历史压缩与 ET.md 记忆注入管理
 │   │   ├── ollamaclient.h/cpp         # 与 Ollama 的 HTTP 流式通信层
-│   │   ├── toolcalldispatcher.h/cpp   # AI 工具定义、参数校验与宿主桥接分发层，仅暴露已实现能力
+│   │   ├── toolcalldispatcher.h/cpp   # AI 工具定义、参数校验与宿主桥接分发层，暴露统计、空间分析与查询能力
 │   │   └── memory/
 │   │       ├── systemcontextbuilder.h/cpp # AI system prompt 构建器，提示词已切到数据资产 + 能力模型
 │   │       └── memoryfilemanager.h/cpp    # ET.md / memory/*.md 记忆文件管理
 │   ├── workflow/
-│   │   └── analysisworkflowcoordinator.h/cpp # 分析工作流状态机，负责基础统计/频率统计/邻域/缓冲/叠加分析补参与操作识别
+│   │   └── analysisworkflowcoordinator.h/cpp # 分析工作流状态机，负责基础统计/频率统计/邻域/缓冲/叠加/属性查询/空间查询补参与操作识别
 │   ├── integration/
 │   │   └── qgsappinitializer.h/cpp    # QGIS 应用初始化/释放管理
 │   └── interfaces/
@@ -54,7 +54,7 @@ src/
 │
 ├── service/                           # 业务逻辑层，负责数据读取、资产组织与分析算法
 │   ├── data/
-│   │   ├── dataservice.h/cpp          # 数据入口服务，统一地图图层与分析资产加载并同步可视化空间数据
+│   │   ├── dataservice.h/cpp          # 数据入口服务，统一地图图层、分析资产与分析结果图层加载并同步可视化空间数据
 │   │   ├── dataformatrouter.h/cpp     # 统一解析/路由层，按扩展名与内容产出统一分析资产
 │   │   ├── datarepository.h/cpp       # 统一分析资产仓库，维护资产列表与当前选择
 │   │   ├── spatialdatabaseconnection.h/cpp # SpatiaLite/SQLite 空间数据库连接 RAII 管理
@@ -66,7 +66,7 @@ src/
 │   └── analysis/
 │       ├── statisticalanalysisservice.h/cpp # 统计分析能力服务，统一接收数值视图执行基础统计与频率统计
 │       ├── spatialanalysisservice.h/cpp     # 空间分析能力服务，实现栅格邻域分析、矢量缓冲区分析与矢量 Intersect/Union 叠加分析
-│       └── attributequeryservice.h/cpp      # 属性查询能力占位服务，统一返回“即将支持”结果
+│       └── attributequeryservice.h/cpp      # 属性查询与空间关系查询服务，筛选命中要素并写出结果图层
 └── ui/                                # 表现层，只负责交互与结果展示
     ├── mainwindow.h/cpp               # 主窗口，负责数据入口调度、统一工作区编排与分析结果自动刷新
     ├── docks/
@@ -78,7 +78,7 @@ src/
     ├── theme/
     │   └── antdesigntheme.h/cpp       # 应用级浅色 Ant Design 风格主题安装器
     ├── map/
-    │   ├── mapcanvaswidget.h/cpp      # 单个地图画布封装，负责图层加入 QgsProject 与地图刷新
+    │   ├── mapcanvaswidget.h/cpp      # 单个地图画布封装，负责图层加入 QgsProject、查询结果高亮与地图刷新
     │   └── mapcanvasmanager.h/cpp     # 多画布管理器
     └── visualization/
         ├── visualizationmanager.h/cpp # 可视化协调器，负责 AnalysisResult 到工作区结果页图表的分发刷新

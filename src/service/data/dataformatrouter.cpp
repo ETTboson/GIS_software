@@ -10,8 +10,6 @@
 #include <QMetaType>
 
 
-#include <qgsfeature.h>
-#include <qgsfeatureiterator.h>
 #include <qgsfield.h>
 #include <qgsfields.h>
 #include <qgsvectorlayer.h>
@@ -91,39 +89,24 @@ bool buildVectorAsset(const QString& _strSourceUri,
     }
 
     const QgsFields _fields = _layerVector.fields();
-    QVector<int> _vnNumericFieldIndices;
     QStringList _vNumericFieldNames;
     for (int _nFieldIdx = 0; _nFieldIdx < _fields.size(); ++_nFieldIdx) {
         const QgsField _fieldCurrent = _fields.at(_nFieldIdx);
         _outAsset.dataVector.vFieldNames.append(_fieldCurrent.name());
         if (isNumericVariantType(_fieldCurrent.type())) {
-            _vnNumericFieldIndices.append(_nFieldIdx);
             _vNumericFieldNames.append(_fieldCurrent.name());
         }
     }
     _outAsset.dataVector.vNumericFieldNames = _vNumericFieldNames;
 
-    if (!_vnNumericFieldIndices.isEmpty() && _outAsset.dataVector.nFeatureCount > 0) {
+    if (!_vNumericFieldNames.isEmpty() && _outAsset.dataVector.nFeatureCount > 0) {
         _outAsset.bHasNumericDataset = true;
         _outAsset.flagsCapabilities |= AnalysisCapability::Statistical;
         _outAsset.dataNumeric.strSourcePath = _strSourceUri;
         _outAsset.dataNumeric.strName = _strDisplayName;
         _outAsset.dataNumeric.strFormat = _outAsset.strSourceFormat;
         _outAsset.dataNumeric.nRows = _outAsset.dataVector.nFeatureCount;
-        _outAsset.dataNumeric.nCols = _vnNumericFieldIndices.size();
-        _outAsset.dataNumeric.vdValues.reserve(
-            _outAsset.dataNumeric.nRows * _outAsset.dataNumeric.nCols);
-
-        QgsFeature _featureCurrent;
-        QgsFeatureIterator _itFeature = _layerVector.getFeatures();
-        while (_itFeature.nextFeature(_featureCurrent)) {
-            for (int _nFieldIdx : _vnNumericFieldIndices) {
-                const QVariant _valueCurrent = _featureCurrent.attribute(_nFieldIdx);
-                bool _bOk = false;
-                double _dValue = _valueCurrent.toDouble(&_bOk);
-                _outAsset.dataNumeric.vdValues.append(_bOk ? _dValue : 0.0);
-            }
-        }
+        _outAsset.dataNumeric.nCols = _vNumericFieldNames.size();
     }
 
     _outAsset.dataVector.strPreviewSummary = buildVectorSummary(_outAsset);

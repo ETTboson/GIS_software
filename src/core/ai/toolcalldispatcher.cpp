@@ -25,6 +25,36 @@ bool isValidOverlayOperationValue(const QString& _strOperation)
         || _strNormalized == "union";
 }
 
+bool isValidQueryOperatorValue(const QString& _strOperator)
+{
+    const QString _strNormalized = _strOperator.trimmed().toLower();
+    return _strNormalized == "="
+        || _strNormalized == "=="
+        || _strNormalized == "eq"
+        || _strNormalized == "!="
+        || _strNormalized == "<>"
+        || _strNormalized == "ne"
+        || _strNormalized == ">"
+        || _strNormalized == "gt"
+        || _strNormalized == ">="
+        || _strNormalized == "gte"
+        || _strNormalized == "<"
+        || _strNormalized == "lt"
+        || _strNormalized == "<="
+        || _strNormalized == "lte"
+        || _strNormalized == "contains";
+}
+
+bool isValidSpatialRelationValue(const QString& _strRelation)
+{
+    const QString _strNormalized = _strRelation.trimmed().toLower();
+    return _strNormalized.isEmpty()
+        || _strNormalized == "intersects"
+        || _strNormalized == "intersect"
+        || _strNormalized == "within"
+        || _strNormalized == "contains";
+}
+
 } // namespace
 
 void ToolCallDispatcher::setConversationContext(
@@ -49,7 +79,9 @@ void ToolCallDispatcher::dispatch(const QString& _strName,
         || _strName == "run_frequency_statistics"
         || _strName == "run_neighborhood_analysis"
         || _strName == "run_buffer_analysis"
-        || _strName == "run_overlay_analysis") {
+        || _strName == "run_overlay_analysis"
+        || _strName == "run_attribute_query"
+        || _strName == "run_spatial_query") {
         executeAnalysisTool(_strName, _jsonArgs);
     } else if (_strName == "save_memory") {
         executeSaveMemory(_jsonArgs);
@@ -164,7 +196,7 @@ QJsonArray ToolCallDispatcher::buildToolsDefinition() const
 
         QJsonObject _fn;
         _fn["name"] = "run_buffer_analysis";
-        _fn["description"] = "对当前选中矢量资产执行缓冲区分析，并将结果写出为 GeoJSON 图层。";
+        _fn["description"] = "对当前选中矢量资产执行缓冲区分析，并将结果写出为可加载地图的结果图层。";
         _fn["parameters"] = _params;
 
         QJsonObject _tool;
@@ -196,7 +228,78 @@ QJsonArray ToolCallDispatcher::buildToolsDefinition() const
 
         QJsonObject _fn;
         _fn["name"] = "run_overlay_analysis";
-        _fn["description"] = "对当前选中矢量资产与另一个矢量资产执行 Intersect 或 Union 叠加分析，并将结果写出为 GeoJSON 图层。";
+        _fn["description"] = "对当前选中矢量资产与另一个矢量资产执行 Intersect 或 Union 叠加分析，并将结果写出为可加载地图的结果图层。";
+        _fn["parameters"] = _params;
+
+        QJsonObject _tool;
+        _tool["type"] = "function";
+        _tool["function"] = _fn;
+        _jsonTools.append(_tool);
+    }
+
+    {
+        QJsonObject _fieldProp;
+        _fieldProp["type"] = "string";
+        _fieldProp["description"] =
+            "属性查询字段名，必须来自 get_analysis_context 的 vector_fields";
+
+        QJsonObject _operatorProp;
+        _operatorProp["type"] = "string";
+        _operatorProp["enum"] = QJsonArray{
+            "=", "!=", ">", ">=", "<", "<=", "contains"
+        };
+        _operatorProp["description"] =
+            "属性查询运算符。数值字段支持大小比较，文本字段支持 =、!=、contains";
+
+        QJsonObject _valueProp;
+        _valueProp["type"] = "string";
+        _valueProp["description"] = "属性查询值";
+
+        QJsonObject _properties;
+        _properties["field_name"] = _fieldProp;
+        _properties["operator"] = _operatorProp;
+        _properties["value"] = _valueProp;
+
+        QJsonObject _params;
+        _params["type"] = "object";
+        _params["properties"] = _properties;
+        _params["required"] = QJsonArray{ "field_name", "operator", "value" };
+
+        QJsonObject _fn;
+        _fn["name"] = "run_attribute_query";
+        _fn["description"] = "按属性条件筛选当前选中矢量资产要素，将命中结果写出为高亮图层。";
+        _fn["parameters"] = _params;
+
+        QJsonObject _tool;
+        _tool["type"] = "function";
+        _tool["function"] = _fn;
+        _jsonTools.append(_tool);
+    }
+
+    {
+        QJsonObject _targetAssetProp;
+        _targetAssetProp["type"] = "string";
+        _targetAssetProp["description"] =
+            "指定区域矢量资产 ID，必须来自 get_analysis_context 的 assets 列表";
+
+        QJsonObject _relationProp;
+        _relationProp["type"] = "string";
+        _relationProp["enum"] = QJsonArray{ "intersects", "within", "contains" };
+        _relationProp["description"] =
+            "源要素与指定区域的空间关系，默认 intersects";
+
+        QJsonObject _properties;
+        _properties["target_asset_id"] = _targetAssetProp;
+        _properties["relation"] = _relationProp;
+
+        QJsonObject _params;
+        _params["type"] = "object";
+        _params["properties"] = _properties;
+        _params["required"] = QJsonArray{ "target_asset_id" };
+
+        QJsonObject _fn;
+        _fn["name"] = "run_spatial_query";
+        _fn["description"] = "按空间关系筛选当前选中矢量资产要素，例如与指定区域相交的所有道路，并将命中结果写出为高亮图层。";
         _fn["parameters"] = _params;
 
         QJsonObject _tool;
@@ -326,6 +429,33 @@ void ToolCallDispatcher::executeAnalysisTool(const QString& _strToolName,
                 tr("参数错误：operation 必须是 intersect 或 union"));
             return;
         }
+    } else if (_strToolName == "run_attribute_query") {
+        const QString _strFieldName =
+            _jsonArgs["field_name"].toString().trimmed();
+        const QString _strOperator =
+            _jsonArgs["operator"].toString().trimmed();
+        if (_strFieldName.isEmpty()) {
+            emit toolFailed(_strToolName, tr("参数错误：field_name 不能为空"));
+            return;
+        }
+        if (!isValidQueryOperatorValue(_strOperator)) {
+            emit toolFailed(_strToolName,
+                tr("参数错误：operator 必须是 =、!=、>、>=、<、<= 或 contains"));
+            return;
+        }
+    } else if (_strToolName == "run_spatial_query") {
+        const QString _strTargetAssetId =
+            _jsonArgs["target_asset_id"].toString().trimmed();
+        if (_strTargetAssetId.isEmpty()) {
+            emit toolFailed(_strToolName, tr("参数错误：target_asset_id 不能为空"));
+            return;
+        }
+        if (_jsonArgs.contains("relation")
+            && !isValidSpatialRelationValue(_jsonArgs["relation"].toString())) {
+            emit toolFailed(_strToolName,
+                tr("参数错误：relation 必须是 intersects、within 或 contains"));
+            return;
+        }
     }
 
     if (!mpToolHost->executeAnalysisTool(_strToolName, _jsonArgs, _strResult, _strError)) {
@@ -426,6 +556,23 @@ QString ToolCallDispatcher::formatAnalysisContext(const QJsonObject& _jsonContex
             _vLines << QString::fromUtf8("矢量几何类型：%1").arg(_strGeomType);
             _vLines << QString::fromUtf8("矢量要素数：%1")
                 .arg(_jsonCurrentAsset["vector_feature_count"].toInt());
+            QStringList _vFields;
+            for (const QJsonValue& _jsonFieldVal :
+                _jsonCurrentAsset["vector_fields"].toArray()) {
+                _vFields << _jsonFieldVal.toString();
+            }
+            QStringList _vNumericFields;
+            for (const QJsonValue& _jsonFieldVal :
+                _jsonCurrentAsset["vector_numeric_fields"].toArray()) {
+                _vNumericFields << _jsonFieldVal.toString();
+            }
+            if (!_vFields.isEmpty()) {
+                _vLines << QString::fromUtf8("矢量字段：%1").arg(_vFields.join(", "));
+            }
+            if (!_vNumericFields.isEmpty()) {
+                _vLines << QString::fromUtf8("数值字段：%1")
+                    .arg(_vNumericFields.join(", "));
+            }
         }
         const QString _strSummary = _jsonCurrentAsset["summary"].toString().trimmed();
         if (!_strSummary.isEmpty()) {

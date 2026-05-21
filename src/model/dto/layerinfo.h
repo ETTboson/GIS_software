@@ -20,7 +20,9 @@ struct LayerInfo
     QString strGeometryColumn; // 空间数据库几何列名，非数据库图层为空
     QString strName;           // 图层显示名称（通常取文件名或空间表名）
     QString strType;           // 图层类型标识，如 "vector" / "raster"
-    bool    bVisible;          // 图层当前是否在地图视图中显示
+    bool    bVisible = true;   // 图层当前是否在地图视图中显示
+    bool    bIsAnalysisResult = false; // 是否为分析或查询结果图层
+    bool    bUseHighlightStyle = false; // 是否使用高亮渲染样式
 };
 
 #endif // LAYERINFO_H_A1B2C3D4E5F6

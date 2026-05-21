@@ -3,6 +3,7 @@
 #include <QVBoxLayout>
 #include <QDebug>
 #include <QFileInfo>
+#include <QColor>
 
 #include <qgsmapcanvas.h>
 #include <qgsmaptoolpan.h>
@@ -12,8 +13,15 @@
 #include <qgsrasterlayer.h>
 #include <qgsproject.h>
 #include <qgscoordinatereferencesystem.h>
+#include <qgsexception.h>
 #include <qgspointxy.h>
+#include <qgsrectangle.h>
 #include <qgslayertree.h>
+#include <qgsfillsymbol.h>
+#include <qgslinesymbol.h>
+#include <qgsmarkersymbol.h>
+#include <qgssinglesymbolrenderer.h>
+#include <qgssymbol.h>
 
 
 // ════════════════════════════════════════════════════════
@@ -53,6 +61,9 @@ void MapCanvasWidget::initCanvas()
     mpCanvas->setDestinationCrs(_defaultCrs);
 
     // 开启动态投影（on-the-fly CRS transformation）
+    mpCanvas->setCachingEnabled(true);
+    mpCanvas->setParallelRenderingEnabled(true);
+    mpCanvas->setPreviewJobsEnabled(true);
     mpCanvas->setMapUpdateInterval(250);
 
     // ── 布局：让画布填满整个 Widget ──────────────────
@@ -146,6 +157,10 @@ void MapCanvasWidget::loadLayer(const LayerInfo& _layerInfo)
             delete _pVecLayer;
             return;
         }
+        if (_layerInfo.bUseHighlightStyle)
+        {
+            applyHighlightStyle(_pVecLayer);
+        }
         _pLayer = _pVecLayer;
     }
     else if (_strLower.endsWith(".tif")  ||
@@ -163,6 +178,7 @@ void MapCanvasWidget::loadLayer(const LayerInfo& _layerInfo)
             delete _pRasLayer;
             return;
         }
+        _pRasLayer->setDefaultContrastEnhancement();
         _pLayer = _pRasLayer;
     }
     else
@@ -182,7 +198,7 @@ void MapCanvasWidget::loadLayer(const LayerInfo& _layerInfo)
     // 首次加载时缩放至该图层范围
     if (mpvLayers.size() == 1)
     {
-        mpCanvas->setExtent(_pLayer->extent());
+        mpCanvas->setExtent(layerExtentInCanvasCrs(_pLayer));
     }
     mpCanvas->refresh();
 
@@ -283,7 +299,7 @@ void MapCanvasWidget::zoomToLayerExtent(const QString& _strLayerId)
                 return;
             }
 
-            mpCanvas->setExtent(_pLayer->extent());
+            mpCanvas->setExtent(layerExtentInCanvasCrs(_pLayer));
             mpCanvas->refresh();
             return;
         }
@@ -321,6 +337,65 @@ void MapCanvasWidget::setLayerOrder(const QStringList& _vstrLayerIds)
     else
     {
         qWarning() << "[MapCanvasWidget] setLayerOrder: ID list mismatch.";
+    }
+}
+
+void MapCanvasWidget::applyHighlightStyle(QgsVectorLayer* _pLayerInput)
+{
+    if (_pLayerInput == nullptr) {
+        return;
+    }
+
+    QgsSymbol* _pSymbol = QgsSymbol::defaultSymbol(_pLayerInput->geometryType());
+    if (_pSymbol == nullptr) {
+        return;
+    }
+
+    _pSymbol->setColor(QColor(255, 77, 79, 190));
+    _pSymbol->setOpacity(0.85);
+
+    QgsLineSymbol* _pLineSymbol = dynamic_cast<QgsLineSymbol*>(_pSymbol);
+    if (_pLineSymbol != nullptr) {
+        _pLineSymbol->setWidth(1.2);
+    }
+
+    QgsMarkerSymbol* _pMarkerSymbol = dynamic_cast<QgsMarkerSymbol*>(_pSymbol);
+    if (_pMarkerSymbol != nullptr) {
+        _pMarkerSymbol->setSize(4.5);
+    }
+
+    _pLayerInput->setRenderer(new QgsSingleSymbolRenderer(_pSymbol));
+}
+
+QgsRectangle MapCanvasWidget::layerExtentInCanvasCrs(QgsMapLayer* _pLayerInput) const
+{
+    if (_pLayerInput == nullptr || mpCanvas == nullptr) {
+        return QgsRectangle();
+    }
+
+    const QgsRectangle _rectLayerExtent = _pLayerInput->extent();
+    if (_rectLayerExtent.isEmpty()) {
+        return _rectLayerExtent;
+    }
+
+    const QgsCoordinateReferenceSystem _layerCrs = _pLayerInput->crs();
+    const QgsCoordinateReferenceSystem _canvasCrs =
+        mpCanvas->mapSettings().destinationCrs();
+    if (!_layerCrs.isValid()
+        || !_canvasCrs.isValid()
+        || _layerCrs == _canvasCrs) {
+        return _rectLayerExtent;
+    }
+
+    try {
+        QgsCoordinateTransform _transform(_layerCrs, _canvasCrs,
+            QgsProject::instance());
+        return _transform.transformBoundingBox(_rectLayerExtent);
+    } catch (const QgsCsException& _exception) {
+        qWarning() << "[MapCanvasWidget] Failed to transform layer extent:"
+                   << _pLayerInput->name()
+                   << _exception.what();
+        return _rectLayerExtent;
     }
 }
 

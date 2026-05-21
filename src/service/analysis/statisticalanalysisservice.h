@@ -61,6 +61,16 @@ private:
         const QString& _strError);
 
     /*
+     * @brief 解析当前资产的数值视图，矢量属性在运行统计时按需读取
+     * @param_1 _assetInput: 当前分析资产
+     * @param_2 _outDataSet: 成功时写出的数值数据集
+     * @param_3 _strError: 失败原因
+     */
+    bool resolveNumericDataset(const AnalysisDataAsset& _assetInput,
+        NumericDataset& _outDataSet,
+        QString& _strError);
+
+    /*
      * @brief 为基础统计结果构造柱状图数据
      * @param_1 _assetInput: 当前分析资产
      * @param_2 _dMinValue: 最小值

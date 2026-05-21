@@ -10,6 +10,7 @@
 #include <QLabel>
 #include <QLayout>
 #include <QLayoutItem>
+#include <QLineEdit>
 #include <QListWidget>
 #include <QSignalBlocker>
 #include <QSpinBox>
@@ -44,9 +45,14 @@ AnalysisWorkspaceDockWidget::AnalysisWorkspaceDockWidget(QWidget* _pParent)
     , mpctrlComboOverlayOperation(new QComboBox(mpctrlPageTools))
     , mpctrlComboOverlayTarget(new QComboBox(mpctrlPageTools))
     , mpctrlBtnOverlay(new AntButton(tr("运行叠加分析"), mpctrlPageTools))
-    , mpctrlBtnSpatialQuery(new AntButton(tr("空间查询（开发中）"), mpctrlPageTools))
+    , mpctrlComboSpatialRelation(new QComboBox(mpctrlPageTools))
+    , mpctrlComboSpatialTarget(new QComboBox(mpctrlPageTools))
+    , mpctrlBtnSpatialQuery(new AntButton(tr("运行空间查询"), mpctrlPageTools))
     , mpctrlBtnRasterCalc(new AntButton(tr("栅格计算（开发中）"), mpctrlPageTools))
-    , mpctrlBtnAttributeQuery(new AntButton(tr("属性查询（即将支持）"), mpctrlPageTools))
+    , mpctrlComboAttributeField(new QComboBox(mpctrlPageTools))
+    , mpctrlComboAttributeOperator(new QComboBox(mpctrlPageTools))
+    , mpctrlEditAttributeValue(new QLineEdit(mpctrlPageTools))
+    , mpctrlBtnAttributeQuery(new AntButton(tr("运行属性查询"), mpctrlPageTools))
     , mpctrlPageResults(new QWidget(mpctrlTabWidget))
     , mpctrlResultView(new QTextEdit(mpctrlPageResults))
     , mpctrlLabelChartTitle(new QLabel(tr("暂无可视化"), mpctrlPageResults))
@@ -104,6 +110,19 @@ AnalysisWorkspaceDockWidget::AnalysisWorkspaceDockWidget(QWidget* _pParent)
     mpctrlComboOverlayOperation->addItem(
         tr("Union"), static_cast<int>(OverlayOperationType::Union));
     mpctrlComboOverlayTarget->setMinimumWidth(180);
+    mpctrlComboSpatialRelation->addItem(tr("Intersects"), QStringLiteral("intersects"));
+    mpctrlComboSpatialRelation->addItem(tr("Within"), QStringLiteral("within"));
+    mpctrlComboSpatialRelation->addItem(tr("Contains"), QStringLiteral("contains"));
+    mpctrlComboSpatialTarget->setMinimumWidth(180);
+    mpctrlComboAttributeField->setMinimumWidth(180);
+    mpctrlComboAttributeOperator->addItem(QStringLiteral("="), QStringLiteral("eq"));
+    mpctrlComboAttributeOperator->addItem(QStringLiteral("!="), QStringLiteral("ne"));
+    mpctrlComboAttributeOperator->addItem(QStringLiteral(">"), QStringLiteral("gt"));
+    mpctrlComboAttributeOperator->addItem(QStringLiteral(">="), QStringLiteral("gte"));
+    mpctrlComboAttributeOperator->addItem(QStringLiteral("<"), QStringLiteral("lt"));
+    mpctrlComboAttributeOperator->addItem(QStringLiteral("<="), QStringLiteral("lte"));
+    mpctrlComboAttributeOperator->addItem(tr("contains"), QStringLiteral("contains"));
+    mpctrlEditAttributeValue->setPlaceholderText(tr("输入查询值"));
     mpctrlBtnBasicStatistics->setButtonRole(AntButton::Primary);
     mpctrlBtnFrequencyStatistics->setButtonRole(AntButton::Default);
     mpctrlBtnNeighborhood->setButtonRole(AntButton::Default);
@@ -162,6 +181,8 @@ AnalysisWorkspaceDockWidget::AnalysisWorkspaceDockWidget(QWidget* _pParent)
         _fnMakeToolPage(_pOverlayLayout));
 
     QFormLayout* _pSpatialQueryLayout = new QFormLayout();
+    _pSpatialQueryLayout->addRow(tr("空间关系"), mpctrlComboSpatialRelation);
+    _pSpatialQueryLayout->addRow(tr("指定区域"), mpctrlComboSpatialTarget);
     _pSpatialQueryLayout->addRow(tr("空间查询"), mpctrlBtnSpatialQuery);
     _fnAddToolPage("spatial_query", tr("空间查询"),
         _fnMakeToolPage(_pSpatialQueryLayout));
@@ -172,6 +193,9 @@ AnalysisWorkspaceDockWidget::AnalysisWorkspaceDockWidget(QWidget* _pParent)
         _fnMakeToolPage(_pRasterCalcLayout));
 
     QFormLayout* _pAttributeLayout = new QFormLayout();
+    _pAttributeLayout->addRow(tr("字段"), mpctrlComboAttributeField);
+    _pAttributeLayout->addRow(tr("运算符"), mpctrlComboAttributeOperator);
+    _pAttributeLayout->addRow(tr("值"), mpctrlEditAttributeValue);
     _pAttributeLayout->addRow(tr("属性查询"), mpctrlBtnAttributeQuery);
     _fnAddToolPage("attribute_query", tr("属性查询"),
         _fnMakeToolPage(_pAttributeLayout));
@@ -192,8 +216,14 @@ AnalysisWorkspaceDockWidget::AnalysisWorkspaceDockWidget(QWidget* _pParent)
     mpctrlComboOverlayOperation->setEnabled(false);
     mpctrlComboOverlayTarget->setEnabled(false);
     mpctrlBtnOverlay->setEnabled(false);
+    mpctrlComboSpatialRelation->setEnabled(false);
+    mpctrlComboSpatialTarget->setEnabled(false);
     mpctrlBtnSpatialQuery->setEnabled(false);
     mpctrlBtnRasterCalc->setEnabled(false);
+    mpctrlComboAttributeField->setEnabled(false);
+    mpctrlComboAttributeOperator->setEnabled(false);
+    mpctrlEditAttributeValue->setEnabled(false);
+    mpctrlBtnAttributeQuery->setEnabled(false);
 
     mpctrlResultView->setReadOnly(true);
     mpctrlResultView->setPlaceholderText(tr("分析文本结果将在这里显示。"));
@@ -278,8 +308,19 @@ AnalysisWorkspaceDockWidget::AnalysisWorkspaceDockWidget(QWidget* _pParent)
                 mpctrlComboOverlayTarget->currentData().toString(),
                 _eOperation);
         });
+    connect(mpctrlBtnSpatialQuery, &QPushButton::clicked,
+        this, [this]() {
+            emit spatialQueryRequested(
+                mpctrlComboSpatialTarget->currentData().toString(),
+                mpctrlComboSpatialRelation->currentData().toString());
+        });
     connect(mpctrlBtnAttributeQuery, &QPushButton::clicked,
-        this, &AnalysisWorkspaceDockWidget::attributeQueryRequested);
+        this, [this]() {
+            emit attributeQueryRequested(
+                mpctrlComboAttributeField->currentData().toString(),
+                mpctrlComboAttributeOperator->currentData().toString(),
+                mpctrlEditAttributeValue->text());
+        });
     connect(mpctrlHistoryList, &QListWidget::currentRowChanged,
         this, &AnalysisWorkspaceDockWidget::onHistoryItemCurrentRowChanged);
 
@@ -555,8 +596,14 @@ void AnalysisWorkspaceDockWidget::updateToolStates(
         AnalysisCapability::AttributeQuery);
 
     refreshOverlayAssetOptions(_assetCurrent);
+    refreshAttributeFieldOptions(_assetCurrent);
+    refreshSpatialQueryTargetOptions(_assetCurrent);
     const bool _bHasOverlayTarget =
         !mpctrlComboOverlayTarget->currentData().toString().trimmed().isEmpty();
+    const bool _bHasAttributeField =
+        !mpctrlComboAttributeField->currentData().toString().trimmed().isEmpty();
+    const bool _bHasSpatialTarget =
+        !mpctrlComboSpatialTarget->currentData().toString().trimmed().isEmpty();
 
     mpctrlBtnBasicStatistics->setEnabled(_bHasAsset && _bCanStat);
     mpctrlBtnFrequencyStatistics->setEnabled(_bHasAsset && _bCanStat);
@@ -569,7 +616,13 @@ void AnalysisWorkspaceDockWidget::updateToolStates(
     mpctrlComboOverlayOperation->setEnabled(_bHasAsset && _bCanVector);
     mpctrlComboOverlayTarget->setEnabled(_bHasAsset && _bCanVector && _bHasOverlayTarget);
     mpctrlBtnOverlay->setEnabled(_bHasAsset && _bCanVector && _bHasOverlayTarget);
-    mpctrlBtnAttributeQuery->setEnabled(_bHasAsset && _bCanAttributeQuery);
+    mpctrlComboSpatialRelation->setEnabled(_bHasAsset && _bCanVector && _bHasSpatialTarget);
+    mpctrlComboSpatialTarget->setEnabled(_bHasAsset && _bCanVector && _bHasSpatialTarget);
+    mpctrlBtnSpatialQuery->setEnabled(_bHasAsset && _bCanVector && _bHasSpatialTarget);
+    mpctrlComboAttributeField->setEnabled(_bHasAsset && _bCanAttributeQuery && _bHasAttributeField);
+    mpctrlComboAttributeOperator->setEnabled(_bHasAsset && _bCanAttributeQuery && _bHasAttributeField);
+    mpctrlEditAttributeValue->setEnabled(_bHasAsset && _bCanAttributeQuery && _bHasAttributeField);
+    mpctrlBtnAttributeQuery->setEnabled(_bHasAsset && _bCanAttributeQuery && _bHasAttributeField);
 
     const QString _strVectorTip = _bCanVector
         ? tr("当前矢量资产可执行缓冲区分析；叠加分析需要再选择一个矢量资产。")
@@ -580,7 +633,15 @@ void AnalysisWorkspaceDockWidget::updateToolStates(
     mpctrlComboOverlayOperation->setToolTip(tr("选择叠加分析的 Intersect 或 Union 操作。"));
     mpctrlComboOverlayTarget->setToolTip(tr("选择参与叠加分析的第二个矢量资产。"));
     mpctrlBtnOverlay->setToolTip(_strVectorTip);
-    mpctrlBtnSpatialQuery->setToolTip(_strVectorTip);
+    mpctrlComboSpatialRelation->setToolTip(tr("选择源要素与指定区域之间的空间关系。"));
+    mpctrlComboSpatialTarget->setToolTip(tr("选择作为指定区域的面状矢量资产。"));
+    mpctrlBtnSpatialQuery->setToolTip(_bHasSpatialTarget
+        ? tr("筛选满足空间关系的源要素，并高亮显示查询结果。")
+        : tr("空间查询需要另一个面状矢量资产作为指定区域。"));
+    mpctrlComboAttributeField->setToolTip(tr("选择要筛选的属性字段。"));
+    mpctrlComboAttributeOperator->setToolTip(tr("数值字段支持大小比较；文本字段支持等值、不等值和 contains。"));
+    mpctrlEditAttributeValue->setToolTip(tr("输入属性查询值。"));
+    mpctrlBtnAttributeQuery->setToolTip(tr("筛选满足属性条件的要素，并高亮显示查询结果。"));
 
     const QString _strRasterCalcTip = _bCanRaster
         ? tr("当前栅格资产已支持邻域分析，栅格计算仍在开发中。")
@@ -641,6 +702,83 @@ void AnalysisWorkspaceDockWidget::refreshOverlayAssetOptions(
     }
 }
 
+void AnalysisWorkspaceDockWidget::refreshAttributeFieldOptions(
+    const AnalysisDataAsset& _assetCurrent)
+{
+    const QString _strPreviousField =
+        mpctrlComboAttributeField->currentData().toString();
+
+    QSignalBlocker _blocker(mpctrlComboAttributeField);
+    mpctrlComboAttributeField->clear();
+
+    if (_assetCurrent.strAssetId.trimmed().isEmpty()
+        || !_assetCurrent.flagsCapabilities.testFlag(
+            AnalysisCapability::AttributeQuery)) {
+        mpctrlComboAttributeField->addItem(tr("暂无可查询字段"), QString());
+        return;
+    }
+
+    int _nRestoreIndex = -1;
+    for (const QString& _strFieldName : _assetCurrent.dataVector.vFieldNames) {
+        mpctrlComboAttributeField->addItem(_strFieldName, _strFieldName);
+        if (_strFieldName == _strPreviousField) {
+            _nRestoreIndex = mpctrlComboAttributeField->count() - 1;
+        }
+    }
+
+    if (mpctrlComboAttributeField->count() <= 0) {
+        mpctrlComboAttributeField->addItem(tr("暂无可查询字段"), QString());
+        return;
+    }
+
+    if (_nRestoreIndex >= 0) {
+        mpctrlComboAttributeField->setCurrentIndex(_nRestoreIndex);
+    }
+}
+
+void AnalysisWorkspaceDockWidget::refreshSpatialQueryTargetOptions(
+    const AnalysisDataAsset& _assetCurrent)
+{
+    const QString _strPreviousAssetId =
+        mpctrlComboSpatialTarget->currentData().toString();
+
+    QSignalBlocker _blocker(mpctrlComboSpatialTarget);
+    mpctrlComboSpatialTarget->clear();
+
+    if (mpDataRepository == nullptr || _assetCurrent.strAssetId.trimmed().isEmpty()) {
+        mpctrlComboSpatialTarget->addItem(tr("暂无可用区域资产"), QString());
+        return;
+    }
+
+    const QList<AnalysisDataAsset> _vAssets = mpDataRepository->getAssets();
+    int _nRestoreIndex = -1;
+    for (const AnalysisDataAsset& _assetCandidate : _vAssets) {
+        if (_assetCandidate.strAssetId == _assetCurrent.strAssetId
+            || !IsAreaVectorAsset(_assetCandidate)) {
+            continue;
+        }
+
+        const QString _strLabel = tr("%1 (%2)")
+            .arg(_assetCandidate.strName.isEmpty()
+                ? tr("未命名资产")
+                : _assetCandidate.strName,
+                _assetCandidate.strSourceFormat);
+        mpctrlComboSpatialTarget->addItem(_strLabel, _assetCandidate.strAssetId);
+        if (_assetCandidate.strAssetId == _strPreviousAssetId) {
+            _nRestoreIndex = mpctrlComboSpatialTarget->count() - 1;
+        }
+    }
+
+    if (mpctrlComboSpatialTarget->count() <= 0) {
+        mpctrlComboSpatialTarget->addItem(tr("暂无可用区域资产"), QString());
+        return;
+    }
+
+    if (_nRestoreIndex >= 0) {
+        mpctrlComboSpatialTarget->setCurrentIndex(_nRestoreIndex);
+    }
+}
+
 void AnalysisWorkspaceDockWidget::selectToolPage(const QString& _strToolId)
 {
     for (int _nToolIdx = 0;
@@ -697,4 +835,16 @@ QString AnalysisWorkspaceDockWidget::ToolDisplayName(const QString& _strToolId)
         return QObject::tr("栅格计算");
     }
     return _strToolId;
+}
+
+bool AnalysisWorkspaceDockWidget::IsAreaVectorAsset(
+    const AnalysisDataAsset& _assetInput)
+{
+    if (!_assetInput.flagsCapabilities.testFlag(AnalysisCapability::SpatialVector)) {
+        return false;
+    }
+
+    const QString _strGeometryType =
+        _assetInput.dataVector.strGeometryType.trimmed().toLower();
+    return _strGeometryType.contains(QStringLiteral("polygon"));
 }

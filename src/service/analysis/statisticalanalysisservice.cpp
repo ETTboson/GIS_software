@@ -1,7 +1,40 @@
 #include "statisticalanalysisservice.h"
 
+#include <limits>
+
+#include <QFileInfo>
 #include <QStringList>
 #include <QtMath>
+
+#include <qgsfeature.h>
+#include <qgsfeatureiterator.h>
+#include <qgsfeaturerequest.h>
+#include <qgsfield.h>
+#include <qgsfields.h>
+#include <qgsvectorlayer.h>
+
+namespace
+{
+
+QString vectorSourceUriForAsset(const AnalysisDataAsset& _assetInput)
+{
+    const QString _strVectorSourceUri =
+        _assetInput.dataVector.strSourceUri.trimmed();
+    return _strVectorSourceUri.isEmpty()
+        ? _assetInput.strSourcePath
+        : _strVectorSourceUri;
+}
+
+QString vectorProviderKeyForAsset(const AnalysisDataAsset& _assetInput)
+{
+    const QString _strProviderKey =
+        _assetInput.dataVector.strProviderKey.trimmed();
+    return _strProviderKey.isEmpty()
+        ? QStringLiteral("ogr")
+        : _strProviderKey;
+}
+
+} // namespace
 
 StatisticalAnalysisService::StatisticalAnalysisService(QObject* _pParent)
     : QObject(_pParent)
@@ -11,16 +44,17 @@ StatisticalAnalysisService::StatisticalAnalysisService(QObject* _pParent)
 void StatisticalAnalysisService::runBasicStatistics(
     const AnalysisDataAsset& _assetInput)
 {
-    if (!_assetInput.bHasNumericDataset
-        || _assetInput.dataNumeric.vdValues.isEmpty()) {
+    emit analysisProgress(0);
+
+    NumericDataset _dataNumeric;
+    QString _strError;
+    if (!resolveNumericDataset(_assetInput, _dataNumeric, _strError)) {
         emitFailure("basic_statistics", _assetInput,
-            tr("当前数据资产没有可用的数值视图，无法执行基础统计"));
+            _strError);
         return;
     }
 
-    emit analysisProgress(0);
-
-    const QVector<double>& _vdValues = _assetInput.dataNumeric.vdValues;
+    const QVector<double>& _vdValues = _dataNumeric.vdValues;
     double _dMinValue = _vdValues[0];
     double _dMaxValue = _vdValues[0];
     double _dSumValue = 0.0;
@@ -54,8 +88,8 @@ void StatisticalAnalysisService::runBasicStatistics(
         "均值：%7")
         .arg(_assetInput.strName)
         .arg(_assetInput.strSourceFormat)
-        .arg(_assetInput.dataNumeric.nRows)
-        .arg(_assetInput.dataNumeric.nCols)
+        .arg(_dataNumeric.nRows)
+        .arg(_dataNumeric.nCols)
         .arg(_dMinValue, 0, 'f', 6)
         .arg(_dMaxValue, 0, 'f', 6)
         .arg(_dMeanValue, 0, 'f', 6);
@@ -66,10 +100,13 @@ void StatisticalAnalysisService::runFrequencyStatistics(
     const AnalysisDataAsset& _assetInput,
     int _nBinCount)
 {
-    if (!_assetInput.bHasNumericDataset
-        || _assetInput.dataNumeric.vdValues.isEmpty()) {
+    emit analysisProgress(0);
+
+    NumericDataset _dataNumeric;
+    QString _strError;
+    if (!resolveNumericDataset(_assetInput, _dataNumeric, _strError)) {
         emitFailure("frequency_statistics", _assetInput,
-            tr("当前数据资产没有可用的数值视图，无法执行频率统计"));
+            _strError);
         return;
     }
 
@@ -79,9 +116,7 @@ void StatisticalAnalysisService::runFrequencyStatistics(
         return;
     }
 
-    emit analysisProgress(0);
-
-    const QVector<double>& _vdValues = _assetInput.dataNumeric.vdValues;
+    const QVector<double>& _vdValues = _dataNumeric.vdValues;
     double _dMinValue = _vdValues[0];
     double _dMaxValue = _vdValues[0];
     QMap<long long, int> _mapDiscreteCounts;
@@ -178,6 +213,107 @@ void StatisticalAnalysisService::emitFailure(const QString& _strToolId,
     _result.bSuccess = false;
     _result.bHasVisualization = false;
     emit analysisFailed(_result);
+}
+
+bool StatisticalAnalysisService::resolveNumericDataset(
+    const AnalysisDataAsset& _assetInput,
+    NumericDataset& _outDataSet,
+    QString& _strError)
+{
+    if (_assetInput.bHasNumericDataset
+        && !_assetInput.dataNumeric.vdValues.isEmpty()) {
+        _outDataSet = _assetInput.dataNumeric;
+        return true;
+    }
+
+    if (_assetInput.eAssetType != DataAssetType::Vector
+        || _assetInput.dataVector.vNumericFieldNames.isEmpty()) {
+        _strError = tr("当前数据资产没有可用的数值视图，无法执行统计分析");
+        return false;
+    }
+
+    const QString _strSourceUri = vectorSourceUriForAsset(_assetInput);
+    if (_strSourceUri.trimmed().isEmpty()) {
+        _strError = tr("矢量资产缺少可读取的数据源，无法执行统计分析");
+        return false;
+    }
+
+    QgsVectorLayer _layerVector(
+        _strSourceUri,
+        _assetInput.strName,
+        vectorProviderKeyForAsset(_assetInput));
+    if (!_layerVector.isValid()) {
+        _strError = tr("无法读取矢量数据：%1").arg(_strSourceUri);
+        return false;
+    }
+
+    const QgsFields _fields = _layerVector.fields();
+    QList<int> _vnNumericFieldIndices;
+    for (const QString& _strFieldName : _assetInput.dataVector.vNumericFieldNames) {
+        const int _nFieldIdx = _fields.indexFromName(_strFieldName);
+        if (_nFieldIdx >= 0) {
+            _vnNumericFieldIndices.append(_nFieldIdx);
+        }
+    }
+
+    if (_vnNumericFieldIndices.isEmpty()) {
+        _strError = tr("矢量资产没有可读取的数值字段，无法执行统计分析");
+        return false;
+    }
+
+    const qint64 _lFeatureCount = _layerVector.featureCount();
+    const qint64 _lValueCount =
+        _lFeatureCount * static_cast<qint64>(_vnNumericFieldIndices.size());
+    if (_lValueCount > std::numeric_limits<int>::max()) {
+        _strError = tr("矢量数值字段过大，当前统计视图无法一次性载入");
+        return false;
+    }
+
+    _outDataSet = NumericDataset();
+    _outDataSet.strSourcePath = _strSourceUri;
+    _outDataSet.strName = _assetInput.strName.trimmed().isEmpty()
+        ? QFileInfo(_strSourceUri).fileName()
+        : _assetInput.strName;
+    _outDataSet.strFormat = _assetInput.strSourceFormat;
+    _outDataSet.nCols = _vnNumericFieldIndices.size();
+    if (_lValueCount > 0) {
+        _outDataSet.vdValues.reserve(static_cast<int>(_lValueCount));
+    }
+
+    QgsFeatureRequest _request;
+    _request.setFlags(Qgis::FeatureRequestFlag::NoGeometry);
+    _request.setSubsetOfAttributes(_vnNumericFieldIndices);
+
+    emit analysisProgress(5);
+
+    int _nFeatureCount = 0;
+    QgsFeature _featureCurrent;
+    QgsFeatureIterator _itFeature = _layerVector.getFeatures(_request);
+    while (_itFeature.nextFeature(_featureCurrent)) {
+        const QgsAttributes _attributesCurrent = _featureCurrent.attributes();
+        int _nSubsetAttrIdx = 0;
+        for (int _nFieldIdx : _vnNumericFieldIndices) {
+            const QVariant _valueCurrent =
+                (_nFieldIdx < _attributesCurrent.size())
+                ? _attributesCurrent.at(_nFieldIdx)
+                : (_nSubsetAttrIdx < _attributesCurrent.size()
+                    ? _attributesCurrent.at(_nSubsetAttrIdx)
+                    : QVariant());
+            bool _bOk = false;
+            const double _dValue = _valueCurrent.toDouble(&_bOk);
+            _outDataSet.vdValues.append(_bOk ? _dValue : 0.0);
+            ++_nSubsetAttrIdx;
+        }
+        ++_nFeatureCount;
+    }
+
+    _outDataSet.nRows = _nFeatureCount;
+    if (_outDataSet.vdValues.isEmpty()) {
+        _strError = tr("矢量资产没有可用于统计的数值记录");
+        return false;
+    }
+
+    return true;
 }
 
 VisualizationData StatisticalAnalysisService::buildBasicStatisticsVisualization(

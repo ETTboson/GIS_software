@@ -6,6 +6,7 @@
 #include <QString>
 
 #include "model/dto/analysisdataasset.h"
+#include "model/dto/analysisresult.h"
 #include "model/dto/layerinfo.h"
 #include "model/enums/dataassettype.h"
 #include "service/data/spatialdatabasequery.h"
@@ -15,8 +16,7 @@ class SpatialDatabaseService;
 // ════════════════════════════════════════════════════════
 //  DataService
 //  职责：统一处理地图图层入口与分析数据入口。
-//        可视化空间数据会同步发布为地图图层和分析资产，
-//        分析结果图层仍可按地图链路单独加载。
+//        地图图层入口与分析数据入口解耦，分析结果图层仍可按地图链路单独加载。
 //  位于 service/data/ 层，不持有任何 UI 对象。
 // ════════════════════════════════════════════════════════
 class DataService : public QObject
@@ -42,7 +42,13 @@ public:
     void loadLayerToMap(const QString& _strFilePath);
 
     /*
-     * @brief 把数据文件送入分析链路，可视化空间数据会同步发布为地图图层
+     * @brief 把分析结果图层加载请求送入地图链路，并保留结果高亮信息
+     * @param_1 _resultInput: 分析结果 DTO
+     */
+    void loadAnalysisResultLayer(const AnalysisResult& _resultInput);
+
+    /*
+     * @brief 把数据文件送入分析链路，可视化空间数据会按资产能力同步发布为地图图层
      * @param_1 _strFilePath: 数据文件的本地绝对路径
      */
     void openDataForAnalysis(const QString& _strFilePath);
@@ -139,6 +145,11 @@ private:
      * @brief 根据分析资产构造可加载地图图层 DTO
      */
     LayerInfo buildLayerInfo(const AnalysisDataAsset& _assetInput) const;
+
+    /*
+     * @brief 根据分析结果构造高亮结果图层 DTO
+     */
+    LayerInfo buildLayerInfo(const AnalysisResult& _resultInput) const;
 
     /*
      * @brief 发布图层记录并按需跳过已有图层

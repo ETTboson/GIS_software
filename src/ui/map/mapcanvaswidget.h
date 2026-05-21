@@ -6,6 +6,7 @@
 #include <QString>
 #include <QStringList>
 #include <qgspointxy.h>
+#include <qgsrectangle.h>
 
 #include "model/dto/layerinfo.h"
 #include "model/enums/maptooltype.h"
@@ -15,6 +16,7 @@ class QgsMapCanvas;
 class QgsMapLayer;
 class QgsMapToolPan;
 class QgsMapToolZoom;
+class QgsVectorLayer;
 
 // ════════════════════════════════════════════════════════
 //  MapCanvasWidget
@@ -136,6 +138,18 @@ private:
      * @brief 根据当前 mpvLayers 重新设置画布图层列表并刷新
      */
     void refreshCanvasLayers();
+
+    /*
+     * @brief 为查询结果矢量图层应用高亮样式
+     * @param_1 _pLayerInput: 待设置样式的矢量图层
+     */
+    void applyHighlightStyle(QgsVectorLayer* _pLayerInput);
+
+    /*
+     * @brief 把图层原始范围转换为当前画布 CRS 下的范围
+     * @param_1 _pLayerInput: 目标图层
+     */
+    QgsRectangle layerExtentInCanvasCrs(QgsMapLayer* _pLayerInput) const;
 
     // ── QGIS 核心对象 ─────────────────────────────────
     QgsMapCanvas*   mpCanvas;       // QGIS 画布主体

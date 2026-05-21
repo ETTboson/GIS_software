@@ -29,6 +29,68 @@ int findCoordinateColumn(const QStringList& _vHeaders,
     return -1;
 }
 
+QChar detectDelimiter(const QString& _strLine)
+{
+    bool _bInQuotes = false;
+    bool _bHasComma = false;
+    bool _bHasSemicolon = false;
+
+    for (int _nCharIdx = 0; _nCharIdx < _strLine.size(); ++_nCharIdx) {
+        const QChar _chCurrent = _strLine[_nCharIdx];
+        if (_chCurrent == QChar('"')) {
+            if (_bInQuotes
+                && _nCharIdx + 1 < _strLine.size()
+                && _strLine[_nCharIdx + 1] == QChar('"')) {
+                ++_nCharIdx;
+                continue;
+            }
+            _bInQuotes = !_bInQuotes;
+            continue;
+        }
+
+        if (!_bInQuotes && _chCurrent == QChar(',')) {
+            _bHasComma = true;
+        } else if (!_bInQuotes && _chCurrent == QChar(';')) {
+            _bHasSemicolon = true;
+        }
+    }
+
+    return (_bHasSemicolon && !_bHasComma) ? QChar(';') : QChar(',');
+}
+
+QStringList parseDelimitedLine(const QString& _strLine, QChar _chDelimiter)
+{
+    QStringList _vTokens;
+    QString _strToken;
+    bool _bInQuotes = false;
+
+    for (int _nCharIdx = 0; _nCharIdx < _strLine.size(); ++_nCharIdx) {
+        const QChar _chCurrent = _strLine[_nCharIdx];
+        if (_chCurrent == QChar('"')) {
+            if (_bInQuotes
+                && _nCharIdx + 1 < _strLine.size()
+                && _strLine[_nCharIdx + 1] == QChar('"')) {
+                _strToken.append(QChar('"'));
+                ++_nCharIdx;
+                continue;
+            }
+            _bInQuotes = !_bInQuotes;
+            continue;
+        }
+
+        if (!_bInQuotes && _chCurrent == _chDelimiter) {
+            _vTokens.append(_strToken);
+            _strToken.clear();
+            continue;
+        }
+
+        _strToken.append(_chCurrent);
+    }
+
+    _vTokens.append(_strToken);
+    return _vTokens;
+}
+
 QStringList buildDefaultHeaders(int _nColCount)
 {
     QStringList _vHeaders;
@@ -176,7 +238,6 @@ bool CsvInspector::inspect(const QString& _strFilePath,
     _outAsset.strSourcePath = _strFilePath;
     _outAsset.strSourceFormat = "csv";
     _outAsset.eAssetType = DataAssetType::Table;
-    _outAsset.flagsCapabilities |= AnalysisCapability::AttributeQuery;
     _outAsset.bHasNumericDataset = !_vnNumericColumnIndices.isEmpty();
     if (_outAsset.bHasNumericDataset) {
         _outAsset.flagsCapabilities |= AnalysisCapability::Statistical;
@@ -268,10 +329,7 @@ bool CsvInspector::buildPointAsset(const AnalysisDataAsset& _assetTable,
 
 QStringList CsvInspector::splitCsvLine(const QString& _strLine)
 {
-    if (_strLine.contains(';') && !_strLine.contains(',')) {
-        return _strLine.split(';', Qt::KeepEmptyParts);
-    }
-    return _strLine.split(',', Qt::KeepEmptyParts);
+    return parseDelimitedLine(_strLine, detectDelimiter(_strLine));
 }
 
 bool CsvInspector::isNumericRow(const QStringList& _vTokens)

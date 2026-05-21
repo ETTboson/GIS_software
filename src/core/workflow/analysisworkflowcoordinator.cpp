@@ -23,6 +23,10 @@ QString analysisTaskTypeToString(
         return QString::fromUtf8("缓冲区分析");
     case AnalysisWorkflowCoordinator::AnalysisTaskType::OverlayAnalysis:
         return QString::fromUtf8("叠加分析");
+    case AnalysisWorkflowCoordinator::AnalysisTaskType::AttributeQuery:
+        return QString::fromUtf8("属性查询");
+    case AnalysisWorkflowCoordinator::AnalysisTaskType::SpatialQuery:
+        return QString::fromUtf8("空间查询");
     case AnalysisWorkflowCoordinator::AnalysisTaskType::None:
     default:
         return QString::fromUtf8("未确定");
@@ -37,6 +41,40 @@ bool assetHasCapability(const QJsonObject& _jsonAsset,
         if (_jsonVal.toString() == _strCapability) {
             return true;
         }
+    }
+    return false;
+}
+
+bool assetIsAreaVector(const QJsonObject& _jsonAsset)
+{
+    return assetHasCapability(_jsonAsset, QStringLiteral("spatial_vector"))
+        && _jsonAsset["vector_geometry_type"].toString()
+            .toLower().contains(QStringLiteral("polygon"));
+}
+
+bool parseSpatialRelationValue(const QString& _strRelation,
+    QString& _strRelationId)
+{
+    const QString _strNormalized = _strRelation.trimmed().toLower();
+    if (_strNormalized.isEmpty()
+        || _strNormalized == "intersects"
+        || _strNormalized == "intersect"
+        || _strNormalized == "intersection"
+        || _strNormalized.contains(QString::fromUtf8("相交"))) {
+        _strRelationId = QStringLiteral("intersects");
+        return true;
+    }
+    if (_strNormalized == "within"
+        || _strNormalized.contains(QString::fromUtf8("范围内"))
+        || _strNormalized.contains(QString::fromUtf8("位于"))
+        || _strNormalized.contains(QString::fromUtf8("在")) ) {
+        _strRelationId = QStringLiteral("within");
+        return true;
+    }
+    if (_strNormalized == "contains"
+        || _strNormalized.contains(QString::fromUtf8("包含"))) {
+        _strRelationId = QStringLiteral("contains");
+        return true;
     }
     return false;
 }
@@ -139,7 +177,9 @@ QString AnalysisWorkflowCoordinator::buildDeterministicReply() const
             "2. 频率统计\n"
             "3. 邻域分析\n"
             "4. 缓冲区分析\n"
-            "5. 叠加分析");
+            "5. 叠加分析\n"
+            "6. 属性查询\n"
+            "7. 空间查询");
     }
 
     return buildNeedMoreInfoReply();
@@ -170,7 +210,9 @@ QJsonArray AnalysisWorkflowCoordinator::buildStateUpdateToolsDefinition() const
             "run_frequency_statistics",
             "run_neighborhood_analysis",
             "run_buffer_analysis",
-            "run_overlay_analysis"
+            "run_overlay_analysis",
+            "run_attribute_query",
+            "run_spatial_query"
         };
 
         QJsonObject _binProp;
@@ -192,6 +234,25 @@ QJsonArray AnalysisWorkflowCoordinator::buildStateUpdateToolsDefinition() const
         _operationProp["type"] = "string";
         _operationProp["enum"] = QJsonArray{ "intersect", "union" };
 
+        QJsonObject _fieldProp;
+        _fieldProp["type"] = "string";
+
+        QJsonObject _queryOperatorProp;
+        _queryOperatorProp["type"] = "string";
+        _queryOperatorProp["enum"] = QJsonArray{
+            "=", "!=", ">", ">=", "<", "<=", "contains"
+        };
+
+        QJsonObject _queryValueProp;
+        _queryValueProp["type"] = "string";
+
+        QJsonObject _targetAssetProp;
+        _targetAssetProp["type"] = "string";
+
+        QJsonObject _relationProp;
+        _relationProp["type"] = "string";
+        _relationProp["enum"] = QJsonArray{ "intersects", "within", "contains" };
+
         QJsonObject _properties;
         _properties["tool_name"] = _toolNameProp;
         _properties["bin_count"] = _binProp;
@@ -200,6 +261,11 @@ QJsonArray AnalysisWorkflowCoordinator::buildStateUpdateToolsDefinition() const
         _properties["segments"] = _segmentsProp;
         _properties["overlay_asset_id"] = _overlayAssetProp;
         _properties["operation"] = _operationProp;
+        _properties["field_name"] = _fieldProp;
+        _properties["operator"] = _queryOperatorProp;
+        _properties["value"] = _queryValueProp;
+        _properties["target_asset_id"] = _targetAssetProp;
+        _properties["relation"] = _relationProp;
 
         QJsonObject _params;
         _params["type"] = "object";
@@ -327,6 +393,12 @@ bool AnalysisWorkflowCoordinator::tryApplyLocalStateUpdate(
         case AnalysisTaskType::OverlayAnalysis:
             _jsonArgs["tool_name"] = "run_overlay_analysis";
             break;
+        case AnalysisTaskType::AttributeQuery:
+            _jsonArgs["tool_name"] = "run_attribute_query";
+            break;
+        case AnalysisTaskType::SpatialQuery:
+            _jsonArgs["tool_name"] = "run_spatial_query";
+            break;
         case AnalysisTaskType::None:
         default:
             break;
@@ -369,6 +441,32 @@ bool AnalysisWorkflowCoordinator::tryApplyLocalStateUpdate(
         }
     }
 
+    if (_type == AnalysisTaskType::AttributeQuery
+        || mState.type == AnalysisTaskType::AttributeQuery) {
+        QString _strFieldName;
+        QString _strOperatorId;
+        QString _strValueText;
+        if (tryExtractAttributeQueryParts(
+                _strUserText, _strFieldName, _strOperatorId, _strValueText)) {
+            _jsonArgs["field_name"] = _strFieldName;
+            _jsonArgs["operator"] = _strOperatorId;
+            _jsonArgs["value"] = _strValueText;
+        }
+    }
+
+    if (_type == AnalysisTaskType::SpatialQuery
+        || mState.type == AnalysisTaskType::SpatialQuery) {
+        QString _strTargetAssetId;
+        if (tryExtractSpatialTargetAssetId(_strUserText, _strTargetAssetId)) {
+            _jsonArgs["target_asset_id"] = _strTargetAssetId;
+        }
+
+        QString _strRelationId;
+        if (tryExtractSpatialRelation(_strUserText, _strRelationId)) {
+            _jsonArgs["relation"] = _strRelationId;
+        }
+    }
+
     if (_jsonArgs.isEmpty()) {
         return false;
     }
@@ -388,6 +486,11 @@ void AnalysisWorkflowCoordinator::inferTaskTypeFromText(const QString& _strUserT
         OverlayOperationType _eOverlayOperation = OverlayOperationType::Intersect;
         if (tryExtractOverlayOperation(_strUserText, _eOverlayOperation)) {
             mState.eOverlayOperation = _eOverlayOperation;
+        }
+    } else if (mState.type == AnalysisTaskType::SpatialQuery) {
+        QString _strRelationId;
+        if (tryExtractSpatialRelation(_strUserText, _strRelationId)) {
+            mState.strSpatialRelationId = _strRelationId;
         }
     }
 }
@@ -419,6 +522,25 @@ void AnalysisWorkflowCoordinator::recalculateMissingParams()
         }
         if (!mState.bHasOverlayAssetId) {
             mState.vMissingParams << "overlay_asset_id";
+        }
+        break;
+    case AnalysisTaskType::AttributeQuery:
+        if (!mState.bHasQueryFieldName) {
+            mState.vMissingParams << "field_name";
+        }
+        if (!mState.bHasQueryOperator) {
+            mState.vMissingParams << "operator";
+        }
+        if (!mState.bHasQueryValue) {
+            mState.vMissingParams << "value";
+        }
+        break;
+    case AnalysisTaskType::SpatialQuery:
+        if (!mState.bHasSpatialTargetAssetId) {
+            tryAutoSelectSingleSpatialTargetAsset();
+        }
+        if (!mState.bHasSpatialTargetAssetId) {
+            mState.vMissingParams << "target_asset_id";
         }
         break;
     case AnalysisTaskType::None:
@@ -458,6 +580,36 @@ bool AnalysisWorkflowCoordinator::tryAutoSelectSingleOverlayAsset()
     return true;
 }
 
+bool AnalysisWorkflowCoordinator::tryAutoSelectSingleSpatialTargetAsset()
+{
+    if (mpToolHost == nullptr) {
+        return false;
+    }
+
+    const QJsonObject _jsonContext = mpToolHost->getAnalysisContext();
+    const QString _strSelectedAssetId =
+        _jsonContext["selected_asset_id"].toString().trimmed();
+    QStringList _vCandidateIds;
+    for (const QJsonValue& _jsonVal : _jsonContext["assets"].toArray()) {
+        const QJsonObject _jsonAsset = _jsonVal.toObject();
+        const QString _strAssetId = _jsonAsset["id"].toString().trimmed();
+        if (_strAssetId.isEmpty()
+            || _strAssetId == _strSelectedAssetId
+            || !assetIsAreaVector(_jsonAsset)) {
+            continue;
+        }
+        _vCandidateIds << _strAssetId;
+    }
+
+    if (_vCandidateIds.size() != 1) {
+        return false;
+    }
+
+    mState.bHasSpatialTargetAssetId = true;
+    mState.strSpatialTargetAssetId = _vCandidateIds.first();
+    return true;
+}
+
 AnalysisWorkflowCoordinator::TransitionResult
 AnalysisWorkflowCoordinator::buildExecutionTransition() const
 {
@@ -479,6 +631,13 @@ AnalysisWorkflowCoordinator::buildExecutionTransition() const
         _result.jsonToolArgs["overlay_asset_id"] = mState.strOverlayAssetId;
         _result.jsonToolArgs["operation"] =
             overlayOperationToToolValue(mState.eOverlayOperation);
+    } else if (_result.strToolName == "run_attribute_query") {
+        _result.jsonToolArgs["field_name"] = mState.strQueryFieldName;
+        _result.jsonToolArgs["operator"] = mState.strQueryOperatorId;
+        _result.jsonToolArgs["value"] = mState.strQueryValueText;
+    } else if (_result.strToolName == "run_spatial_query") {
+        _result.jsonToolArgs["target_asset_id"] = mState.strSpatialTargetAssetId;
+        _result.jsonToolArgs["relation"] = mState.strSpatialRelationId;
     }
     return _result;
 }
@@ -498,6 +657,10 @@ AnalysisWorkflowCoordinator::applyStateUpdateArgs(const QJsonObject& _jsonArgs)
             mState.type = AnalysisTaskType::BufferAnalysis;
         } else if (_strToolName == "run_overlay_analysis") {
             mState.type = AnalysisTaskType::OverlayAnalysis;
+        } else if (_strToolName == "run_attribute_query") {
+            mState.type = AnalysisTaskType::AttributeQuery;
+        } else if (_strToolName == "run_spatial_query") {
+            mState.type = AnalysisTaskType::SpatialQuery;
         }
     }
 
@@ -546,6 +709,46 @@ AnalysisWorkflowCoordinator::applyStateUpdateArgs(const QJsonObject& _jsonArgs)
         if (!_strOverlayAssetId.isEmpty()) {
             mState.bHasOverlayAssetId = true;
             mState.strOverlayAssetId = _strOverlayAssetId;
+        }
+    }
+
+    if (_jsonArgs.contains("field_name")) {
+        const QString _strFieldName =
+            _jsonArgs["field_name"].toString().trimmed();
+        if (!_strFieldName.isEmpty()) {
+            mState.bHasQueryFieldName = true;
+            mState.strQueryFieldName = _strFieldName;
+        }
+    }
+
+    if (_jsonArgs.contains("operator")) {
+        const QString _strOperatorId =
+            _jsonArgs["operator"].toString().trimmed();
+        if (!_strOperatorId.isEmpty()) {
+            mState.bHasQueryOperator = true;
+            mState.strQueryOperatorId = _strOperatorId;
+        }
+    }
+
+    if (_jsonArgs.contains("value")) {
+        mState.bHasQueryValue = true;
+        mState.strQueryValueText = _jsonArgs["value"].toString();
+    }
+
+    if (_jsonArgs.contains("target_asset_id")) {
+        const QString _strTargetAssetId =
+            _jsonArgs["target_asset_id"].toString().trimmed();
+        if (!_strTargetAssetId.isEmpty()) {
+            mState.bHasSpatialTargetAssetId = true;
+            mState.strSpatialTargetAssetId = _strTargetAssetId;
+        }
+    }
+
+    if (_jsonArgs.contains("relation")) {
+        QString _strRelationId;
+        if (parseSpatialRelationValue(
+                _jsonArgs["relation"].toString(), _strRelationId)) {
+            mState.strSpatialRelationId = _strRelationId;
         }
     }
 
@@ -624,6 +827,21 @@ QString AnalysisWorkflowCoordinator::buildCollectedParamLines() const
         _vLines << QString::fromUtf8("  叠加操作：%1")
             .arg(overlayOperationToDisplayName(mState.eOverlayOperation));
     }
+    if (mState.bHasQueryFieldName) {
+        _vLines << QString::fromUtf8("  查询字段：%1").arg(mState.strQueryFieldName);
+    }
+    if (mState.bHasQueryOperator) {
+        _vLines << QString::fromUtf8("  查询运算符：%1").arg(mState.strQueryOperatorId);
+    }
+    if (mState.bHasQueryValue) {
+        _vLines << QString::fromUtf8("  查询值：%1").arg(mState.strQueryValueText);
+    }
+    if (mState.bHasSpatialTargetAssetId) {
+        _vLines << QString::fromUtf8("  指定区域资产 ID：%1")
+            .arg(mState.strSpatialTargetAssetId);
+        _vLines << QString::fromUtf8("  空间关系：%1")
+            .arg(mState.strSpatialRelationId);
+    }
     return _vLines.join("\n");
 }
 
@@ -641,6 +859,14 @@ QString AnalysisWorkflowCoordinator::buildMissingParamLines() const
             _vLines << QString::fromUtf8("缓冲距离：例如 100");
         } else if (_strParam == "overlay_asset_id") {
             _vLines << buildOverlayCandidateLines();
+        } else if (_strParam == "field_name") {
+            _vLines << QString::fromUtf8("字段名：例如 score 或 population");
+        } else if (_strParam == "operator") {
+            _vLines << QString::fromUtf8("运算符：= / != / > / >= / < / <= / contains");
+        } else if (_strParam == "value") {
+            _vLines << QString::fromUtf8("查询值：例如 100000 或 school");
+        } else if (_strParam == "target_asset_id") {
+            _vLines << buildSpatialTargetCandidateLines();
         }
     }
 
@@ -686,6 +912,42 @@ QStringList AnalysisWorkflowCoordinator::buildOverlayCandidateLines() const
     return _vLines;
 }
 
+QStringList AnalysisWorkflowCoordinator::buildSpatialTargetCandidateLines() const
+{
+    QStringList _vLines;
+    if (mpToolHost == nullptr) {
+        _vLines << QString::fromUtf8("指定区域：请指定另一个面状矢量资产的 target_asset_id");
+        return _vLines;
+    }
+
+    const QJsonObject _jsonContext = mpToolHost->getAnalysisContext();
+    const QString _strSelectedAssetId =
+        _jsonContext["selected_asset_id"].toString().trimmed();
+    QStringList _vCandidates;
+    for (const QJsonValue& _jsonVal : _jsonContext["assets"].toArray()) {
+        const QJsonObject _jsonAsset = _jsonVal.toObject();
+        const QString _strAssetId = _jsonAsset["id"].toString().trimmed();
+        if (_strAssetId.isEmpty()
+            || _strAssetId == _strSelectedAssetId
+            || !assetIsAreaVector(_jsonAsset)) {
+            continue;
+        }
+
+        _vCandidates << QString::fromUtf8("%1（ID：%2）")
+            .arg(_jsonAsset["name"].toString(), _strAssetId);
+    }
+
+    if (_vCandidates.isEmpty()) {
+        _vLines << QString::fromUtf8("指定区域：请先导入另一个面状矢量资产");
+    } else {
+        _vLines << QString::fromUtf8("指定区域：请选择一个候选 target_asset_id");
+        for (const QString& _strCandidate : _vCandidates) {
+            _vLines << QString::fromUtf8("  - %1").arg(_strCandidate);
+        }
+    }
+    return _vLines;
+}
+
 QString AnalysisWorkflowCoordinator::currentToolName() const
 {
     switch (mState.type) {
@@ -699,6 +961,10 @@ QString AnalysisWorkflowCoordinator::currentToolName() const
         return "run_buffer_analysis";
     case AnalysisTaskType::OverlayAnalysis:
         return "run_overlay_analysis";
+    case AnalysisTaskType::AttributeQuery:
+        return "run_attribute_query";
+    case AnalysisTaskType::SpatialQuery:
+        return "run_spatial_query";
     case AnalysisTaskType::None:
     default:
         return QString();
@@ -741,6 +1007,15 @@ bool AnalysisWorkflowCoordinator::looksLikeStateUpdateInput(
         || _strText.contains("intersect", Qt::CaseInsensitive)
         || _strText.contains("union", Qt::CaseInsensitive)
         || _strText.contains("asset_id", Qt::CaseInsensitive)
+        || _strText.contains("field_name", Qt::CaseInsensitive)
+        || _strText.contains("operator", Qt::CaseInsensitive)
+        || _strText.contains("target_asset_id", Qt::CaseInsensitive)
+        || _strText.contains("relation", Qt::CaseInsensitive)
+        || _strText.contains(QString::fromUtf8("属性查询"))
+        || _strText.contains(QString::fromUtf8("空间查询"))
+        || _strText.contains(QString::fromUtf8("字段"))
+        || _strText.contains(QString::fromUtf8("运算符"))
+        || _strText.contains(QString::fromUtf8("指定区域"))
         || _strText.contains(QString::fromUtf8("叠加资产"))
         || _strText.contains(QString::fromUtf8("交集"))
         || _strText.contains(QString::fromUtf8("相交"))
@@ -764,6 +1039,26 @@ AnalysisWorkflowCoordinator::AnalysisTaskType
 AnalysisWorkflowCoordinator::detectTaskType(const QString& _strUserText)
 {
     const QString _strText = _strUserText.toLower();
+    const bool _bQueryIntent = _strText.contains(QString::fromUtf8("查询"))
+        || _strText.contains(QString::fromUtf8("筛选"))
+        || _strText.contains("query")
+        || _strText.contains("filter");
+    if (_bQueryIntent
+        && (_strText.contains(QString::fromUtf8("空间"))
+            || _strText.contains(QString::fromUtf8("区域"))
+            || _strText.contains(QString::fromUtf8("相交"))
+            || _strText.contains(QString::fromUtf8("范围"))
+            || _strText.contains("intersect")
+            || _strText.contains("within")
+            || _strText.contains("contains"))) {
+        return AnalysisTaskType::SpatialQuery;
+    }
+    if (_bQueryIntent
+        || _strText.contains(QString::fromUtf8("属性查询"))
+        || _strText.contains(QString::fromUtf8("按属性"))
+        || _strText.contains("where")) {
+        return AnalysisTaskType::AttributeQuery;
+    }
     if (_strText.contains(QString::fromUtf8("叠加"))
         || _strText.contains(QString::fromUtf8("交集"))
         || _strText.contains(QString::fromUtf8("相交"))
@@ -923,4 +1218,75 @@ bool AnalysisWorkflowCoordinator::tryExtractOverlayOperation(
     }
 
     return parseOverlayOperationValue(_match.captured(1), _eOperation);
+}
+
+bool AnalysisWorkflowCoordinator::tryExtractAttributeQueryParts(
+    const QString& _strText,
+    QString& _strFieldName,
+    QString& _strOperatorId,
+    QString& _strValueText)
+{
+    static const QRegularExpression S_RE_ATTRIBUTE_CONDITION(
+        R"(([A-Za-z_][A-Za-z0-9_]*)\s*(>=|<=|!=|<>|=|>|<|contains)\s*([^\s，,。]+))",
+        QRegularExpression::CaseInsensitiveOption);
+    const QRegularExpressionMatch _match = S_RE_ATTRIBUTE_CONDITION.match(_strText);
+    if (!_match.hasMatch()) {
+        return false;
+    }
+
+    _strFieldName = _match.captured(1).trimmed();
+    _strOperatorId = _match.captured(2).trimmed();
+    _strValueText = _match.captured(3).trimmed();
+    return !_strFieldName.isEmpty()
+        && !_strOperatorId.isEmpty()
+        && !_strValueText.isEmpty();
+}
+
+bool AnalysisWorkflowCoordinator::tryExtractSpatialTargetAssetId(
+    const QString& _strText,
+    QString& _strTargetAssetId)
+{
+    static const QRegularExpression S_RE_TARGET_ID(
+        R"((?:target_asset_id|asset_id|资产ID|资产编号|指定区域|区域资产)\D{0,12}([A-Za-z0-9\-]+))",
+        QRegularExpression::CaseInsensitiveOption);
+    const QRegularExpressionMatch _match = S_RE_TARGET_ID.match(_strText);
+    if (!_match.hasMatch()) {
+        return false;
+    }
+
+    _strTargetAssetId = _match.captured(1).trimmed();
+    return !_strTargetAssetId.isEmpty();
+}
+
+bool AnalysisWorkflowCoordinator::tryExtractSpatialRelation(
+    const QString& _strText,
+    QString& _strRelationId)
+{
+    const QString _strNormalized = _strText.toLower();
+    if (_strNormalized.contains(QString::fromUtf8("相交"))
+        || _strNormalized.contains("intersect")) {
+        _strRelationId = QStringLiteral("intersects");
+        return true;
+    }
+    if (_strNormalized.contains(QString::fromUtf8("包含"))
+        || _strNormalized.contains("contains")) {
+        _strRelationId = QStringLiteral("contains");
+        return true;
+    }
+    if (_strNormalized.contains(QString::fromUtf8("范围内"))
+        || _strNormalized.contains(QString::fromUtf8("位于"))
+        || _strNormalized.contains("within")) {
+        _strRelationId = QStringLiteral("within");
+        return true;
+    }
+
+    static const QRegularExpression S_RE_RELATION(
+        R"((?:relation|空间关系|关系)\D{0,8}(intersects?|within|contains))",
+        QRegularExpression::CaseInsensitiveOption);
+    const QRegularExpressionMatch _match = S_RE_RELATION.match(_strText);
+    if (!_match.hasMatch()) {
+        return false;
+    }
+
+    return parseSpatialRelationValue(_match.captured(1), _strRelationId);
 }

@@ -36,7 +36,8 @@ QString SystemContextBuilder::buildAnalysisModeBasePrompt() const
         "4. 用户补参数时只调用内部工具 set_analysis_params\n"
         "5. 用户取消当前流程时调用 cancel_analysis\n"
         "6. 如果当前消息明显已切换到非分析话题，不要继续补参\n"
-        "7. 叠加分析 operation 默认为 intersect；用户提到联合、并集或 union 时设为 union");
+        "7. 叠加分析 operation 默认为 intersect；用户提到联合、并集或 union 时设为 union\n"
+        "8. 用户说查询、筛选、按属性条件、与指定区域相交时，优先识别为属性查询或空间查询，不要误当成叠加分析");
 }
 
 QString SystemContextBuilder::buildPromptText() const
@@ -68,7 +69,7 @@ QString SystemContextBuilder::buildToolPolicyBlock() const
         "工具调用规范\n\n"
         "可用工具分为三类：上下文工具、分析工具、记忆工具。\n"
         "1. 只读工具可直接调用：get_analysis_context、search_memory\n"
-        "2. 分析工具需要参数完整后再调用：run_basic_statistics、run_frequency_statistics、run_neighborhood_analysis、run_buffer_analysis、run_overlay_analysis\n"
+        "2. 分析工具需要参数完整后再调用：run_basic_statistics、run_frequency_statistics、run_neighborhood_analysis、run_buffer_analysis、run_overlay_analysis、run_attribute_query、run_spatial_query\n"
         "   run_overlay_analysis 支持 operation=intersect 或 union，默认 intersect\n"
         "3. save_memory 只有在用户明确要求“记住”某些规则、偏好或项目事实时再调用\n"
         "4. 工具执行失败时，解释失败原因并给出下一步建议\n"
@@ -113,7 +114,7 @@ QString SystemContextBuilder::buildEnvContextBlock() const
         "当前环境\n\n"
         "时间：%1\n"
         "工作目录：%2\n"
-        "可用分析工具：run_basic_statistics、run_frequency_statistics、run_neighborhood_analysis、run_buffer_analysis、run_overlay_analysis（operation: intersect/union）\n"
+        "可用分析工具：run_basic_statistics、run_frequency_statistics、run_neighborhood_analysis、run_buffer_analysis、run_overlay_analysis（operation: intersect/union）、run_attribute_query、run_spatial_query\n"
         "可用只读工具：get_analysis_context、search_memory\n"
         "注意：环境信息为当前会话快照。")
         .arg(QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm"))

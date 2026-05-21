@@ -27,7 +27,9 @@ public:
         FrequencyStatistics,
         NeighborhoodAnalysis,
         BufferAnalysis,
-        OverlayAnalysis
+        OverlayAnalysis,
+        AttributeQuery,
+        SpatialQuery
     };
 
     enum class AnalysisTurnKind
@@ -153,6 +155,15 @@ private:
         bool bHasOverlayAssetId = false;                 // 是否已有叠加资产 ID
         QString strOverlayAssetId;                       // 叠加分析第二矢量资产 ID
         OverlayOperationType eOverlayOperation = OverlayOperationType::Intersect; // 叠加操作类型
+        bool bHasQueryFieldName = false;                 // 是否已有属性查询字段名
+        QString strQueryFieldName;                       // 属性查询字段名
+        bool bHasQueryOperator = false;                  // 是否已有属性查询运算符
+        QString strQueryOperatorId;                      // 属性查询运算符标识
+        bool bHasQueryValue = false;                     // 是否已有属性查询值
+        QString strQueryValueText;                       // 属性查询值文本
+        bool bHasSpatialTargetAssetId = false;           // 是否已有空间查询目标区域资产 ID
+        QString strSpatialTargetAssetId;                 // 空间查询目标区域资产 ID
+        QString strSpatialRelationId = QStringLiteral("intersects"); // 空间查询关系
         QStringList vMissingParams;                     // 当前缺失参数列表
         QString strLastError;                           // 最近错误文本
     };
@@ -160,6 +171,7 @@ private:
     void inferTaskTypeFromText(const QString& _strUserText);
     void recalculateMissingParams();
     bool tryAutoSelectSingleOverlayAsset();
+    bool tryAutoSelectSingleSpatialTargetAsset();
     TransitionResult buildExecutionTransition() const;
     TransitionResult applyStateUpdateArgs(const QJsonObject& _jsonArgs);
     QJsonArray extractRecentDialogue(const QJsonArray& _jsonRawHistory,
@@ -168,6 +180,7 @@ private:
     QString buildCollectedParamLines() const;
     QString buildMissingParamLines() const;
     QStringList buildOverlayCandidateLines() const;
+    QStringList buildSpatialTargetCandidateLines() const;
     QString currentToolName() const;
     static bool isCancelText(const QString& _strText);
     static bool isCapabilityIntent(const QString& _strText);
@@ -183,6 +196,14 @@ private:
         QString& _strOverlayAssetId);
     static bool tryExtractOverlayOperation(const QString& _strText,
         OverlayOperationType& _eOperation);
+    static bool tryExtractAttributeQueryParts(const QString& _strText,
+        QString& _strFieldName,
+        QString& _strOperatorId,
+        QString& _strValueText);
+    static bool tryExtractSpatialTargetAssetId(const QString& _strText,
+        QString& _strTargetAssetId);
+    static bool tryExtractSpatialRelation(const QString& _strText,
+        QString& _strRelationId);
 
     AnalysisWorkflowState mState; // 当前分析工作流状态
     IAIToolHost*          mpToolHost = nullptr; // 宿主桥接接口
