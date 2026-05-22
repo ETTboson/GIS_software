@@ -5,6 +5,7 @@
 //  QgsAppInitializer
 //  职责：以 RAII 方式管理 QGIS 应用程序的生命周期
 //        构造时完成 QgsApplication 的初始化序列，
+//        并从 exe 同级目录推导可重定位的 QGIS/GDAL/PROJ 运行时路径，
 //        析构时安全退出 QGIS，确保资源释放顺序正确。
 //  位于 core/integration/ 层，与业务逻辑无关。
 //  使用方式：在 main() 中 QgsApplication 构造之后立即创建，

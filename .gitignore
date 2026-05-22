@@ -1,0 +1,33 @@
+# Build and package output
+/build/
+/build_oop_current/
+/dist/
+/.vs/
+/out/
+CMakeUserPresets.json
+*.user
+*.suo
+*.VC.db
+*.VC.opendb
+
+# Local Codex/session files
+/.codex/
+/plan.md
+/report.md
+/example_report.md
+/example_ai_log_*.md
+
+# Local references and experimental code
+/refs/
+/example_code/
+
+# Local-only demo/output data
+/sample_data/Chengdu/
+/sample_data/CourseData/
+/sample_data/Q_3D/
+/sample_data/analysis_outputs/
+
+# Runtime logs and temporary files
+*.log
+*.tmp
+*.bak

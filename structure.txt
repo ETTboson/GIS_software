@@ -1,6 +1,11 @@
 CMakeLists.txt                         # CMake 构建入口，注册 Qt/QGIS/GDAL/QGIS 3D 依赖与源码文件
 README.md                              # 中文项目说明、构建依赖与 UTF-8/MSVC 配置提示
+Dev_manual.md                          # 开发人员本机依赖路径配置说明
 rules.txt                              # 项目代码规范、命名规则与分层要求
+.gitignore                             # 本地构建产物、打包产物与大样例数据忽略规则
+
+scripts/
+└── package_windows.ps1                # Windows Release 打包脚本，收集 exe、Qt/QGIS/GDAL/PROJ 运行时与项目图标并生成 zip
 
 resources/
 ├── icons/                             # Ribbon、菜单与 AI 面板使用的图标资源
@@ -14,7 +19,7 @@ sample_data/
 └── README.txt                         # 测试数据说明与预期结果
 
 src/
-├── main.cpp                           # 程序入口，启动 Qt 应用与主窗口
+├── main.cpp                           # 程序入口，启动 Qt 应用、切换工作目录到 exe 同级并创建主窗口
 │
 ├── model/                             # 纯数据结构层，不含业务逻辑
 │   ├── dto/
@@ -48,7 +53,7 @@ src/
 │   ├── workflow/
 │   │   └── analysisworkflowcoordinator.h/cpp # 分析工作流状态机，负责基础统计/频率统计/邻域/缓冲/叠加/属性查询/空间查询/邻近查询补参与操作识别
 │   ├── integration/
-│   │   └── qgsappinitializer.h/cpp    # QGIS 应用初始化/释放管理
+│   │   └── qgsappinitializer.h/cpp    # QGIS 应用初始化/释放管理，并按 exe 同级目录推导可重定位运行时路径
 │   └── interfaces/
 │       └── iaitoolhost.h              # AI 宿主桥接接口，向 AI 暴露分析上下文与分析执行能力
 │
