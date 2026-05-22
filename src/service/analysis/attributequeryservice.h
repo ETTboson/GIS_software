@@ -50,6 +50,21 @@ public:
         const AnalysisDataAsset& _assetTarget,
         const QString& _strRelationId);
 
+    /*
+     * @brief 按参考图层缓冲距离筛选源矢量资产要素
+     * @param_1 _assetSource: 被筛选的源矢量资产
+     * @param_2 _assetReference: 参考矢量资产
+     * @param_3 _dDistance: 邻近距离，单位为源图层 CRS 单位
+     * @param_4 _nSegments: 缓冲圆弧分段数
+     */
+    void runProximityQuery(const AnalysisDataAsset& _assetSource,
+        const AnalysisDataAsset& _assetReference,
+        double _dDistance,
+        int _nSegments,
+        bool _bInvertMatch = false,
+        const QString& _strSourceSubsetExpression = QString(),
+        const QString& _strReferenceSubsetExpression = QString());
+
 signals:
     void analysisProgress(int _nPercent);
     void analysisFinished(const AnalysisResult& _result);

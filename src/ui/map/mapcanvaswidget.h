@@ -16,7 +16,10 @@ class QgsMapCanvas;
 class QgsMapLayer;
 class QgsMapToolPan;
 class QgsMapToolZoom;
+class QgsRasterLayer;
+class QgsSymbol;
 class QgsVectorLayer;
+class QColor;
 
 // ════════════════════════════════════════════════════════
 //  MapCanvasWidget
@@ -115,6 +118,40 @@ public slots:
      */
     void setLayerOrder(const QStringList& _vstrLayerIds);
 
+    /*
+     * @brief 为指定矢量图层应用简单符号样式
+     * @param_1 _strLayerId: 目标图层的 QGIS 图层 ID
+     * @param_2 _colorSymbol: 符号主颜色
+     * @param_3 _dSizeValue: 线宽或点大小，面图层用于描边宽度
+     * @param_4 _dOpacity: 透明度，范围 0.0 到 1.0
+     */
+    void applyVectorSimpleStyle(const QString& _strLayerId,
+        const QColor& _colorSymbol,
+        double _dSizeValue,
+        double _dOpacity);
+
+    /*
+     * @brief 按字段类型自动为矢量图层应用分类或分级渲染
+     * @param_1 _strLayerId: 目标图层的 QGIS 图层 ID
+     * @param_2 _strFieldName: 渲染字段名
+     * @param_3 _nClassCount: 数值分级数量
+     */
+    void applyVectorFieldRenderer(const QString& _strLayerId,
+        const QString& _strFieldName,
+        int _nClassCount);
+
+    /*
+     * @brief 为单波段栅格应用灰度拉伸
+     * @param_1 _strLayerId: 目标图层的 QGIS 图层 ID
+     */
+    void applyRasterGrayRenderer(const QString& _strLayerId);
+
+    /*
+     * @brief 为单波段栅格应用伪彩色渲染
+     * @param_1 _strLayerId: 目标图层的 QGIS 图层 ID
+     */
+    void applyRasterPseudoColorRenderer(const QString& _strLayerId);
+
 private slots:
     /*
      * @brief 响应 QgsMapCanvas::xyCoordinates 信号，转换并发出 coordChanged
@@ -144,6 +181,32 @@ private:
      * @param_1 _pLayerInput: 待设置样式的矢量图层
      */
     void applyHighlightStyle(QgsVectorLayer* _pLayerInput);
+
+    /*
+     * @brief 按图层 ID 查找当前画布中的图层
+     * @param_1 _strLayerId: 目标图层 ID
+     */
+    QgsMapLayer* findLayerById(const QString& _strLayerId) const;
+
+    /*
+     * @brief 为矢量符号应用通用颜色、透明度与尺寸
+     * @param_1 _pSymbol: 目标符号
+     * @param_2 _colorSymbol: 符号颜色
+     * @param_3 _dSizeValue: 线宽或点大小
+     * @param_4 _dOpacity: 透明度
+     */
+    void applyCommonSymbolStyle(QgsSymbol* _pSymbol,
+        const QColor& _colorSymbol,
+        double _dSizeValue,
+        double _dOpacity) const;
+
+    /*
+     * @brief 判断字段是否为数值类型
+     * @param_1 _pLayerInput: 矢量图层
+     * @param_2 _strFieldName: 字段名
+     */
+    bool isNumericField(QgsVectorLayer* _pLayerInput,
+        const QString& _strFieldName) const;
 
     /*
      * @brief 把图层原始范围转换为当前画布 CRS 下的范围

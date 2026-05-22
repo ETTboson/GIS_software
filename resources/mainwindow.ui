@@ -20,6 +20,9 @@
   <action name="actionAddLayer">
    <property name="text"><string>添加图层</string></property>
   </action>
+  <action name="actionNew3DView">
+   <property name="text"><string>新建3D视图</string></property>
+  </action>
   <action name="actionSaveProject">
    <property name="text"><string>保存工程</string></property>
    <property name="shortcut"><string>Ctrl+S</string></property>
@@ -387,6 +390,8 @@
     <addaction name="actionZoomIn"/>
     <addaction name="actionZoomOut"/>
     <addaction name="actionFitView"/>
+    <addaction name="separator"/>
+    <addaction name="actionNew3DView"/>
     <addaction name="separator"/>
     <addaction name="actionToggleLayerPanel"/>
     <addaction name="actionToggleAIPanel"/>

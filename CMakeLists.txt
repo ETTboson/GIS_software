@@ -37,7 +37,21 @@ set(CMAKE_AUTOUIC_SEARCH_PATHS
     ${CMAKE_SOURCE_DIR}/src/ui/components
 )
 
-find_package(Qt5 REQUIRED COMPONENTS Core Gui Widgets Network Xml Svg Sql PrintSupport)
+find_package(Qt5 REQUIRED COMPONENTS
+    Core
+    Gui
+    Widgets
+    Network
+    Xml
+    Svg
+    Sql
+    PrintSupport
+    3DCore
+    3DRender
+    3DInput
+    3DLogic
+    3DExtras
+)
 
 add_executable(FirstQT
     src/main.cpp
@@ -116,6 +130,8 @@ add_executable(FirstQT
     src/ui/theme/antdesigntheme.h
     src/ui/map/mapcanvaswidget.cpp
     src/ui/map/mapcanvaswidget.h
+    src/ui/map/map3dviewwidget.cpp
+    src/ui/map/map3dviewwidget.h
     src/ui/map/mapcanvasmanager.cpp
     src/ui/map/mapcanvasmanager.h
     src/ui/visualization/visualizationmanager.cpp
@@ -157,8 +173,14 @@ target_link_libraries(FirstQT PRIVATE
     Qt5::Widgets
     Qt5::Network
     Qt5::Xml
+    Qt5::3DCore
+    Qt5::3DRender
+    Qt5::3DInput
+    Qt5::3DLogic
+    Qt5::3DExtras
     qgis_core
     qgis_gui
+    qgis_3d
     gdal_i
     log4cpp
     libxml2

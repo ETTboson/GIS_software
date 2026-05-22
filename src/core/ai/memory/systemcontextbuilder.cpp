@@ -37,7 +37,9 @@ QString SystemContextBuilder::buildAnalysisModeBasePrompt() const
         "5. 用户取消当前流程时调用 cancel_analysis\n"
         "6. 如果当前消息明显已切换到非分析话题，不要继续补参\n"
         "7. 叠加分析 operation 默认为 intersect；用户提到联合、并集或 union 时设为 union\n"
-        "8. 用户说查询、筛选、按属性条件、与指定区域相交时，优先识别为属性查询或空间查询，不要误当成叠加分析");
+        "8. 用户说查询、筛选、按属性条件、与指定区域相交时，优先识别为属性查询或空间查询，不要误当成叠加分析\n"
+        "9. 用户说“距离 A N 米内的 B”时，识别为邻近查询：B 是 source_asset_id，A 是 reference_asset_id\n"
+        "10. 用户说“哪些 B 周围 N 公里内没有 A”时，也是邻近查询：B 是 source_asset_id，A 是 reference_asset_id，distance=N*1000，invert_match=true；不要要求用户提供某一个具体 B 的名称或 ID");
 }
 
 QString SystemContextBuilder::buildPromptText() const
@@ -69,8 +71,10 @@ QString SystemContextBuilder::buildToolPolicyBlock() const
         "工具调用规范\n\n"
         "可用工具分为三类：上下文工具、分析工具、记忆工具。\n"
         "1. 只读工具可直接调用：get_analysis_context、search_memory\n"
-        "2. 分析工具需要参数完整后再调用：run_basic_statistics、run_frequency_statistics、run_neighborhood_analysis、run_buffer_analysis、run_overlay_analysis、run_attribute_query、run_spatial_query\n"
+        "2. 分析工具需要参数完整后再调用：run_basic_statistics、run_frequency_statistics、run_neighborhood_analysis、run_buffer_analysis、run_overlay_analysis、run_attribute_query、run_spatial_query、run_proximity_query\n"
         "   run_overlay_analysis 支持 operation=intersect 或 union，默认 intersect\n"
+        "   所有分析工具都可带 source_asset_id；它可以是资产 ID，也可以是演示别名：建筑/buildings、道路/roads、POI/pois、学校/schools、医院/hospitals、城市/places、水系/waterways、人口/population\n"
+        "   run_proximity_query 使用 source_asset_id 表示被筛选对象，reference_asset_id 表示被缓冲参考对象，例如“找出距离道路 50 米内的建筑”应使用 source_asset_id=建筑、reference_asset_id=道路、distance=50；“哪些学校周围 1 公里内没有医院”应使用 source_asset_id=学校、reference_asset_id=医院、distance=1000、invert_match=true\n"
         "3. save_memory 只有在用户明确要求“记住”某些规则、偏好或项目事实时再调用\n"
         "4. 工具执行失败时，解释失败原因并给出下一步建议\n"
         "5. 不要把工具调用 JSON 直接输出给用户");
@@ -114,7 +118,7 @@ QString SystemContextBuilder::buildEnvContextBlock() const
         "当前环境\n\n"
         "时间：%1\n"
         "工作目录：%2\n"
-        "可用分析工具：run_basic_statistics、run_frequency_statistics、run_neighborhood_analysis、run_buffer_analysis、run_overlay_analysis（operation: intersect/union）、run_attribute_query、run_spatial_query\n"
+        "可用分析工具：run_basic_statistics、run_frequency_statistics、run_neighborhood_analysis、run_buffer_analysis、run_overlay_analysis（operation: intersect/union）、run_attribute_query、run_spatial_query、run_proximity_query\n"
         "可用只读工具：get_analysis_context、search_memory\n"
         "注意：环境信息为当前会话快照。")
         .arg(QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm"))

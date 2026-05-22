@@ -94,6 +94,12 @@ private:
         QString strQueryValueText;    // 属性查询值文本
         QString strSpatialTargetAssetId; // 空间查询指定区域资产 ID
         QString strSpatialRelationId; // 空间查询关系标识
+        QString strSourceAssetId;      // AI 工具指定的源资产 ID，可为空表示当前资产
+        QString strProximityReferenceAssetId; // 邻近查询参考资产 ID
+        bool    bProximityInvertMatch = false; // 邻近查询是否返回不在距离内的要素
+        QString strSourceSubsetExpression; // 源图层可选子集筛选表达式
+        QString strProximityReferenceSubsetExpression; // 参考图层可选子集筛选表达式
+        double  dProximityDistance = 50.0; // 邻近查询距离，单位为米
     };
 
     void initModules();
@@ -123,6 +129,11 @@ private:
     void runToolForCurrentAsset(const AnalysisRunConfig& _configRun);
     void runToolForAsset(const AnalysisDataAsset& _assetInput,
         const AnalysisRunConfig& _configRun);
+    /*
+     * @brief 按资产 ID 或演示别名查找分析资产
+     * @param_1 _strAssetRef: 资产 ID、名称片段或演示别名
+     */
+    AnalysisDataAsset findAssetByIdOrAlias(const QString& _strAssetRef) const;
     void cachePendingRun(const QString& _strAssetId,
         const AnalysisRunConfig& _configRun);
     void clearPendingRun();
@@ -140,6 +151,10 @@ private slots:
     void onOverlayAnalysis();
     void onSpatialQuery();
     void onRasterCalc();
+    /*
+     * @brief 新建独立 3D DEM 视图窗口
+     */
+    void onNew3DView();
     void onAIAnalyze();
     void onAIChat();
     void onAbout();
@@ -167,6 +182,22 @@ private slots:
      * @brief 将活动画布缩放到当前选中图层范围
      */
     void onZoomToSelectedLayer();
+    /*
+     * @brief 为图层树当前选中矢量图层应用简单符号样式
+     */
+    void onApplySimpleSymbol();
+    /*
+     * @brief 为图层树当前选中矢量图层应用字段分类/分级渲染
+     */
+    void onApplyFieldRenderer();
+    /*
+     * @brief 为图层树当前选中栅格图层应用灰度拉伸
+     */
+    void onApplyRasterGrayRenderer();
+    /*
+     * @brief 为图层树当前选中栅格图层应用伪彩色渲染
+     */
+    void onApplyRasterPseudoColorRenderer();
     void onBasicStatisticsRequested();
     void onFrequencyStatisticsRequested(int _nFrequencyBins);
     void onNeighborhoodAnalysisRequested(int _nNeighborhoodWindow);

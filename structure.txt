@@ -1,4 +1,4 @@
-CMakeLists.txt                         # CMake 构建入口，注册 Qt/QGIS/GDAL 依赖与源码文件
+CMakeLists.txt                         # CMake 构建入口，注册 Qt/QGIS/GDAL/QGIS 3D 依赖与源码文件
 README.md                              # 中文项目说明、构建依赖与 UTF-8/MSVC 配置提示
 rules.txt                              # 项目代码规范、命名规则与分层要求
 
@@ -41,12 +41,12 @@ src/
 │   │   ├── aimanager.h/cpp            # AI 对话总协调层，负责普通链/分析状态更新链切换与 tool_call 分发
 │   │   ├── conversationcontext.h/cpp  # 对话上下文、历史压缩与 ET.md 记忆注入管理
 │   │   ├── ollamaclient.h/cpp         # 与 Ollama 的 HTTP 流式通信层
-│   │   ├── toolcalldispatcher.h/cpp   # AI 工具定义、参数校验与宿主桥接分发层，暴露统计、空间分析与查询能力
+│   │   ├── toolcalldispatcher.h/cpp   # AI 工具定义、参数校验与宿主桥接分发层，暴露统计、空间分析、属性/空间/邻近查询能力
 │   │   └── memory/
 │   │       ├── systemcontextbuilder.h/cpp # AI system prompt 构建器，提示词已切到数据资产 + 能力模型
 │   │       └── memoryfilemanager.h/cpp    # ET.md / memory/*.md 记忆文件管理
 │   ├── workflow/
-│   │   └── analysisworkflowcoordinator.h/cpp # 分析工作流状态机，负责基础统计/频率统计/邻域/缓冲/叠加/属性查询/空间查询补参与操作识别
+│   │   └── analysisworkflowcoordinator.h/cpp # 分析工作流状态机，负责基础统计/频率统计/邻域/缓冲/叠加/属性查询/空间查询/邻近查询补参与操作识别
 │   ├── integration/
 │   │   └── qgsappinitializer.h/cpp    # QGIS 应用初始化/释放管理
 │   └── interfaces/
@@ -66,9 +66,9 @@ src/
 │   └── analysis/
 │       ├── statisticalanalysisservice.h/cpp # 统计分析能力服务，统一接收数值视图执行基础统计与频率统计
 │       ├── spatialanalysisservice.h/cpp     # 空间分析能力服务，实现栅格邻域分析、矢量缓冲区分析与矢量 Intersect/Union 叠加分析
-│       └── attributequeryservice.h/cpp      # 属性查询与空间关系查询服务，筛选命中要素并写出结果图层
+│       └── attributequeryservice.h/cpp      # 属性查询、空间关系查询与距离邻近查询服务，筛选命中要素并写出结果图层
 └── ui/                                # 表现层，只负责交互与结果展示
-    ├── mainwindow.h/cpp               # 主窗口，负责数据入口调度、统一工作区编排与分析结果自动刷新
+    ├── mainwindow.h/cpp               # 主窗口，负责数据入口调度、统一工作区编排、符号化菜单、独立 3D DEM 视图入口与分析结果自动刷新
     ├── docks/
     │   ├── aidockwidget.h/cpp         # AI 终端 Dock
     │   └── analysisworkspacedockwidget.h/cpp # 统一分析工作区 Dock，内含 Data / Tools / Results 三页与 Tools 方法切换参数页
@@ -78,7 +78,8 @@ src/
     ├── theme/
     │   └── antdesigntheme.h/cpp       # 应用级浅色 Ant Design 风格主题安装器
     ├── map/
-    │   ├── mapcanvaswidget.h/cpp      # 单个地图画布封装，负责图层加入 QgsProject、查询结果高亮与地图刷新
+    │   ├── mapcanvaswidget.h/cpp      # 单个 2D 地图画布封装，负责图层加入 QgsProject、符号化/栅格渲染、查询结果高亮与地图刷新
+    │   ├── map3dviewwidget.h/cpp      # QGIS 3D DEM 视图封装，负责从用户选择的栅格创建独立地形场景与相机重置
     │   └── mapcanvasmanager.h/cpp     # 多画布管理器
     └── visualization/
         ├── visualizationmanager.h/cpp # 可视化协调器，负责 AnalysisResult 到工作区结果页图表的分发刷新

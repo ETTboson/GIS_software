@@ -298,6 +298,30 @@ VectorOutputTarget buildSpatialOutputTarget(const AnalysisDataAsset& _assetSourc
     return _targetOutput;
 }
 
+VectorOutputTarget buildProximityOutputTarget(const AnalysisDataAsset& _assetSource,
+    const AnalysisDataAsset& _assetReference,
+    double _dDistance,
+    bool _bInvertMatch)
+{
+    const QString _strSourceBaseName = sourceBaseNameForAsset(_assetSource);
+    const QString _strReferenceBaseName = sourceBaseNameForAsset(_assetReference);
+    const QString _strDistanceText = QString::number(_dDistance, 'f', 0);
+    const QString _strTableName = SpatialDatabaseService::sanitizeIdentifier(
+        QStringLiteral("%1_query_%2_%3_%4m")
+            .arg(sanitizeFilePart(_strSourceBaseName),
+                _bInvertMatch ? QStringLiteral("not_near") : QStringLiteral("near"),
+                sanitizeFilePart(_strReferenceBaseName),
+                sanitizeFilePart(_strDistanceText)));
+
+    VectorOutputTarget _targetOutput;
+    _targetOutput.strDatabasePath = resultDatabasePathForAsset(_assetSource);
+    _targetOutput.strTableName = _strTableName;
+    _targetOutput.strSourceUri = SpatialDatabaseService::buildLayerSourceUri(
+        _targetOutput.strDatabasePath, _targetOutput.strTableName);
+    _targetOutput.strLayerName = _targetOutput.strTableName;
+    return _targetOutput;
+}
+
 bool resolveWrittenOutputTarget(const VectorOutputTarget& _targetInput,
     VectorOutputTarget& _targetResolved,
     QString& _strError)
@@ -826,6 +850,261 @@ void AttributeQueryService::runSpatialRelationQuery(
             relationDisplayName(_strRelation))
         .arg(_lSourceTotal)
         .arg(_vTargetGeometries.size())
+        .arg(_vMatchedFeatures.size())
+        .arg(_nSkippedCount)
+        .arg(_targetResolved.strDatabasePath,
+            _targetResolved.strTableName);
+    emit analysisFinished(_result);
+}
+
+void AttributeQueryService::runProximityQuery(
+    const AnalysisDataAsset& _assetSource,
+    const AnalysisDataAsset& _assetReference,
+    double _dDistance,
+    int _nSegments,
+    bool _bInvertMatch,
+    const QString& _strSourceSubsetExpression,
+    const QString& _strReferenceSubsetExpression)
+{
+    if (_dDistance <= 0.0) {
+        emitFailure(_assetSource, tr("邻近查询距离必须大于 0"),
+            QStringLiteral("proximity_query"));
+        return;
+    }
+    if (_nSegments <= 0) {
+        emitFailure(_assetSource, tr("邻近查询缓冲分段数必须大于 0"),
+            QStringLiteral("proximity_query"));
+        return;
+    }
+
+    const QString _strSourceUri = sourceLayerUriForAsset(_assetSource);
+    const QString _strReferenceUri = sourceLayerUriForAsset(_assetReference);
+    if (_strSourceUri.trimmed().isEmpty()
+        || _strReferenceUri.trimmed().isEmpty()) {
+        emitFailure(_assetSource, tr("邻近查询需要两个有效矢量资产"),
+            QStringLiteral("proximity_query"));
+        return;
+    }
+
+    const bool _bSameLayer =
+        (_assetSource.strAssetId == _assetReference.strAssetId
+            || _strSourceUri.trimmed() == _strReferenceUri.trimmed());
+    const bool _bHasDifferentSubset =
+        !_strSourceSubsetExpression.trimmed().isEmpty()
+        && !_strReferenceSubsetExpression.trimmed().isEmpty()
+        && _strSourceSubsetExpression.trimmed()
+            != _strReferenceSubsetExpression.trimmed();
+    if (_bSameLayer && !_bHasDifferentSubset) {
+        emitFailure(_assetSource, tr("邻近查询需要选择另一个图层作为参考对象"),
+            QStringLiteral("proximity_query"));
+        return;
+    }
+
+    QgsVectorLayer _layerSource(
+        _strSourceUri,
+        sourceBaseNameForAsset(_assetSource),
+        QStringLiteral("ogr"));
+    QgsVectorLayer _layerReference(
+        _strReferenceUri,
+        sourceBaseNameForAsset(_assetReference),
+        QStringLiteral("ogr"));
+    if (!_layerSource.isValid()) {
+        emitFailure(_assetSource, tr("无法读取源矢量数据：%1").arg(_strSourceUri),
+            QStringLiteral("proximity_query"));
+        return;
+    }
+    if (!_layerReference.isValid()) {
+        emitFailure(_assetSource, tr("无法读取参考矢量数据：%1").arg(_strReferenceUri),
+            QStringLiteral("proximity_query"));
+        return;
+    }
+
+    if (!_strSourceSubsetExpression.trimmed().isEmpty()
+        && !_layerSource.setSubsetString(_strSourceSubsetExpression.trimmed())) {
+        emitFailure(_assetSource,
+            tr("无法应用源图层筛选条件：%1")
+                .arg(_strSourceSubsetExpression.trimmed()),
+            QStringLiteral("proximity_query"));
+        return;
+    }
+    if (!_strReferenceSubsetExpression.trimmed().isEmpty()
+        && !_layerReference.setSubsetString(_strReferenceSubsetExpression.trimmed())) {
+        emitFailure(_assetSource,
+            tr("无法应用参考图层筛选条件：%1")
+                .arg(_strReferenceSubsetExpression.trimmed()),
+            QStringLiteral("proximity_query"));
+        return;
+    }
+
+    const long long _lSourceTotal = qMax(0LL, _layerSource.featureCount());
+    if (_lSourceTotal <= 0 || _layerReference.featureCount() <= 0) {
+        emitFailure(_assetSource, tr("邻近查询要求源图层和参考图层都包含要素"),
+            QStringLiteral("proximity_query"));
+        return;
+    }
+
+    emit analysisProgress(0);
+
+    QgsCoordinateReferenceSystem _queryCrs(QStringLiteral("EPSG:3857"));
+    if (!_queryCrs.isValid()) {
+        _queryCrs = _layerSource.crs();
+    }
+
+    const bool _bTransformSource = _queryCrs.isValid()
+        && _layerSource.crs().isValid()
+        && _layerSource.crs() != _queryCrs;
+    const bool _bTransformReference = _queryCrs.isValid()
+        && _layerReference.crs().isValid()
+        && _layerReference.crs() != _queryCrs;
+    const QgsCoordinateTransform _ctSourceToQuery(
+        _layerSource.crs(),
+        _queryCrs,
+        QgsProject::instance()->transformContext());
+    const QgsCoordinateTransform _ctReferenceToQuery(
+        _layerReference.crs(),
+        _queryCrs,
+        QgsProject::instance()->transformContext());
+
+    QVector<QgsGeometry> _vBufferedGeometries;
+    int _nSkippedCount = 0;
+
+    QgsFeature _featureReference;
+    QgsFeatureIterator _itReference = _layerReference.getFeatures();
+    while (_itReference.nextFeature(_featureReference)) {
+        QgsGeometry _geomReference = _featureReference.geometry();
+        if (!transformGeometryToSourceCrs(
+                _geomReference, _ctReferenceToQuery, _bTransformReference)
+            || !normalizeGeometry(_geomReference)) {
+            ++_nSkippedCount;
+            continue;
+        }
+
+        QgsGeometry _geomBuffer = _geomReference.buffer(_dDistance, _nSegments);
+        if (!normalizeGeometry(_geomBuffer)) {
+            ++_nSkippedCount;
+            continue;
+        }
+        _vBufferedGeometries.append(_geomBuffer);
+    }
+
+    if (_vBufferedGeometries.isEmpty()) {
+        emitFailure(_assetSource, tr("参考图层没有可用缓冲几何"),
+            QStringLiteral("proximity_query"));
+        return;
+    }
+
+    QVector<QgsFeature> _vMatchedFeatures;
+    long long _lProcessedCount = 0;
+    QgsFeature _featureSource;
+    QgsFeatureIterator _itSource = _layerSource.getFeatures();
+    while (_itSource.nextFeature(_featureSource)) {
+        ++_lProcessedCount;
+
+        QgsGeometry _geomSource = _featureSource.geometry();
+        if (!transformGeometryToSourceCrs(
+                _geomSource, _ctSourceToQuery, _bTransformSource)
+            || !normalizeGeometry(_geomSource)) {
+            ++_nSkippedCount;
+            continue;
+        }
+
+        bool _bMatched = false;
+        for (const QgsGeometry& _geomBuffer : _vBufferedGeometries) {
+            if (_geomSource.boundingBoxIntersects(_geomBuffer)
+                && _geomSource.intersects(_geomBuffer)) {
+                _bMatched = true;
+                break;
+            }
+        }
+
+        const bool _bKeepFeature = _bInvertMatch ? !_bMatched : _bMatched;
+        if (_bKeepFeature) {
+            _vMatchedFeatures.append(_featureSource);
+        }
+
+        const int _nProgress = static_cast<int>(
+            qMin(95.0, 100.0 * static_cast<double>(_lProcessedCount)
+                / static_cast<double>(_lSourceTotal)));
+        emit analysisProgress(_nProgress);
+    }
+
+    if (_vMatchedFeatures.isEmpty()) {
+        emit analysisProgress(100);
+        emit analysisFinished(buildZeroMatchResult(
+            _assetSource,
+            QStringLiteral("proximity_query"),
+            tr(
+                "邻近查询完成\n"
+                "源数据资产：%1\n"
+                "参考资产：%2\n"
+                "距离阈值：%3 米\n"
+                "源要素数：%4\n"
+                "参考缓冲几何数：%5\n"
+                "%6要素数：0\n"
+                "未生成高亮结果图层。")
+                .arg(_assetSource.strName,
+                    _assetReference.strName)
+                .arg(_dDistance, 0, 'f', 2)
+                .arg(_lSourceTotal)
+                .arg(_vBufferedGeometries.size())
+                .arg(_bInvertMatch ? tr("未命中") : tr("命中"))));
+        return;
+    }
+
+    const VectorOutputTarget _targetOutput = buildProximityOutputTarget(
+        _assetSource, _assetReference, _dDistance, _bInvertMatch);
+    QString _strWriteError;
+    if (!writeFeaturesToSpatialite(
+            _layerSource, _vMatchedFeatures, _targetOutput, _strWriteError)) {
+        emitFailure(_assetSource,
+            tr("写出邻近查询结果失败：%1").arg(_strWriteError),
+            QStringLiteral("proximity_query"));
+        return;
+    }
+
+    VectorOutputTarget _targetResolved;
+    QString _strResolveError;
+    if (!resolveWrittenOutputTarget(
+            _targetOutput, _targetResolved, _strResolveError)) {
+        emitFailure(_assetSource,
+            tr("邻近查询结果写入后无法确认空间表：%1").arg(_strResolveError),
+            QStringLiteral("proximity_query"));
+        return;
+    }
+
+    emit analysisProgress(100);
+
+    AnalysisResult _result;
+    _result.strType = QStringLiteral("proximity_query");
+    _result.strToolId = QStringLiteral("proximity_query");
+    _result.strSourceAssetId = _assetSource.strAssetId;
+    _result.strSourceAssetName = _assetSource.strName;
+    _result.bSuccess = true;
+    _result.bHasVisualization = false;
+    _result.bHasOutputLayer = true;
+    _result.strOutputPath = _targetResolved.strSourceUri;
+    _result.strOutputLayerName = _targetResolved.strLayerName;
+    _result.strOutputLayerType = QStringLiteral("vector");
+    _result.strDesc = tr(
+        "邻近查询完成\n"
+        "源数据资产：%1\n"
+        "参考资产：%2\n"
+        "距离阈值：%3 米\n"
+        "源要素数：%4\n"
+        "参考缓冲几何数：%5\n"
+        "匹配模式：%6\n"
+        "%7要素数：%8\n"
+        "跳过几何数：%9\n"
+        "输出数据库：%10\n"
+        "输出空间表：%11")
+        .arg(_assetSource.strName,
+            _assetReference.strName)
+        .arg(_dDistance, 0, 'f', 2)
+        .arg(_lSourceTotal)
+        .arg(_vBufferedGeometries.size())
+        .arg(_bInvertMatch ? tr("返回距离范围外的源要素")
+                           : tr("返回距离范围内的源要素"))
+        .arg(_bInvertMatch ? tr("未命中") : tr("命中"))
         .arg(_vMatchedFeatures.size())
         .arg(_nSkippedCount)
         .arg(_targetResolved.strDatabasePath,

@@ -1,9 +1,15 @@
 #include "mapcanvaswidget.h"
 
+#include <limits>
+
 #include <QVBoxLayout>
 #include <QDebug>
 #include <QFileInfo>
 #include <QColor>
+#include <QMetaType>
+#include <QSet>
+#include <QVariant>
+#include <QtMath>
 
 #include <qgsmapcanvas.h>
 #include <qgsmaptoolpan.h>
@@ -11,17 +17,74 @@
 #include <qgscoordinatetransform.h>
 #include <qgsvectorlayer.h>
 #include <qgsrasterlayer.h>
+#include <qgsrasterdataprovider.h>
+#include <qgsrasterbandstats.h>
 #include <qgsproject.h>
 #include <qgscoordinatereferencesystem.h>
 #include <qgsexception.h>
 #include <qgspointxy.h>
 #include <qgsrectangle.h>
 #include <qgslayertree.h>
+#include <qgsfield.h>
+#include <qgsfields.h>
+#include <qgsfeature.h>
+#include <qgsfeatureiterator.h>
 #include <qgsfillsymbol.h>
 #include <qgslinesymbol.h>
 #include <qgsmarkersymbol.h>
 #include <qgssinglesymbolrenderer.h>
+#include <qgscategorizedsymbolrenderer.h>
+#include <qgsgraduatedsymbolrenderer.h>
+#include <qgsrendererrange.h>
+#include <qgssinglebandgrayrenderer.h>
+#include <qgssinglebandpseudocolorrenderer.h>
+#include <qgscontrastenhancement.h>
+#include <qgsrastershader.h>
+#include <qgscolorrampshader.h>
 #include <qgssymbol.h>
+
+namespace
+{
+
+bool isNumericVariantType(QMetaType::Type _eType)
+{
+    return _eType == QMetaType::Int
+        || _eType == QMetaType::UInt
+        || _eType == QMetaType::LongLong
+        || _eType == QMetaType::ULongLong
+        || _eType == QMetaType::Double;
+}
+
+QColor categoryColor(int _nCategoryIdx)
+{
+    static const QList<QColor> S_V_COLORS = {
+        QColor("#1677FF"),
+        QColor("#52C41A"),
+        QColor("#FAAD14"),
+        QColor("#EB2F96"),
+        QColor("#13C2C2"),
+        QColor("#722ED1"),
+        QColor("#FA541C"),
+        QColor("#2F54EB")
+    };
+    return S_V_COLORS.at(_nCategoryIdx % S_V_COLORS.size());
+}
+
+QColor rampColor(double _dRatio)
+{
+    const double _dClamped = qBound(0.0, _dRatio, 1.0);
+    const QColor _colorStart("#E6F4FF");
+    const QColor _colorEnd("#0958D9");
+    const int _nRed = static_cast<int>(
+        _colorStart.red() + (_colorEnd.red() - _colorStart.red()) * _dClamped);
+    const int _nGreen = static_cast<int>(
+        _colorStart.green() + (_colorEnd.green() - _colorStart.green()) * _dClamped);
+    const int _nBlue = static_cast<int>(
+        _colorStart.blue() + (_colorEnd.blue() - _colorStart.blue()) * _dClamped);
+    return QColor(_nRed, _nGreen, _nBlue, 220);
+}
+
+} // namespace
 
 
 // ════════════════════════════════════════════════════════
@@ -340,6 +403,245 @@ void MapCanvasWidget::setLayerOrder(const QStringList& _vstrLayerIds)
     }
 }
 
+void MapCanvasWidget::applyVectorSimpleStyle(const QString& _strLayerId,
+    const QColor& _colorSymbol,
+    double _dSizeValue,
+    double _dOpacity)
+{
+    QgsVectorLayer* _pVectorLayer =
+        qobject_cast<QgsVectorLayer*>(findLayerById(_strLayerId));
+    if (_pVectorLayer == nullptr) {
+        qWarning() << "[MapCanvasWidget] applyVectorSimpleStyle: vector layer not found:"
+                   << _strLayerId;
+        return;
+    }
+
+    QgsSymbol* _pSymbol = QgsSymbol::defaultSymbol(_pVectorLayer->geometryType());
+    if (_pSymbol == nullptr) {
+        return;
+    }
+
+    applyCommonSymbolStyle(_pSymbol, _colorSymbol, _dSizeValue, _dOpacity);
+    _pVectorLayer->setRenderer(new QgsSingleSymbolRenderer(_pSymbol));
+    _pVectorLayer->triggerRepaint();
+    mpCanvas->refresh();
+}
+
+void MapCanvasWidget::applyVectorFieldRenderer(const QString& _strLayerId,
+    const QString& _strFieldName,
+    int _nClassCount)
+{
+    QgsVectorLayer* _pVectorLayer =
+        qobject_cast<QgsVectorLayer*>(findLayerById(_strLayerId));
+    if (_pVectorLayer == nullptr) {
+        qWarning() << "[MapCanvasWidget] applyVectorFieldRenderer: vector layer not found:"
+                   << _strLayerId;
+        return;
+    }
+
+    const int _nFieldIdx = _pVectorLayer->fields().indexOf(_strFieldName);
+    if (_nFieldIdx < 0) {
+        qWarning() << "[MapCanvasWidget] applyVectorFieldRenderer: field not found:"
+                   << _strFieldName;
+        return;
+    }
+
+    if (!isNumericField(_pVectorLayer, _strFieldName)) {
+        QgsCategoryList _vCategories;
+        QSet<QString> _setValues;
+        QgsFeature _featureCurrent;
+        QgsFeatureIterator _itFeature = _pVectorLayer->getFeatures();
+        while (_itFeature.nextFeature(_featureCurrent)) {
+            const QString _strValue = _featureCurrent.attribute(_nFieldIdx).toString();
+            if (_setValues.contains(_strValue)) {
+                continue;
+            }
+            _setValues.insert(_strValue);
+
+            QgsSymbol* _pSymbol = QgsSymbol::defaultSymbol(_pVectorLayer->geometryType());
+            if (_pSymbol == nullptr) {
+                continue;
+            }
+            applyCommonSymbolStyle(
+                _pSymbol,
+                categoryColor(_vCategories.size()),
+                1.0,
+                0.85);
+            _vCategories.append(QgsRendererCategory(
+                _strValue,
+                _pSymbol,
+                _strValue.trimmed().isEmpty() ? tr("<空值>") : _strValue));
+
+            if (_vCategories.size() >= 24) {
+                break;
+            }
+        }
+
+        if (_vCategories.isEmpty()) {
+            return;
+        }
+
+        _pVectorLayer->setRenderer(
+            new QgsCategorizedSymbolRenderer(_strFieldName, _vCategories));
+        _pVectorLayer->triggerRepaint();
+        mpCanvas->refresh();
+        return;
+    }
+
+    double _dMinimumValue = std::numeric_limits<double>::max();
+    double _dMaximumValue = -std::numeric_limits<double>::max();
+    QgsFeature _featureCurrent;
+    QgsFeatureIterator _itFeature = _pVectorLayer->getFeatures();
+    while (_itFeature.nextFeature(_featureCurrent)) {
+        bool _bOk = false;
+        const double _dValue = _featureCurrent.attribute(_nFieldIdx).toDouble(&_bOk);
+        if (!_bOk) {
+            continue;
+        }
+        _dMinimumValue = qMin(_dMinimumValue, _dValue);
+        _dMaximumValue = qMax(_dMaximumValue, _dValue);
+    }
+
+    if (_dMinimumValue > _dMaximumValue) {
+        return;
+    }
+
+    const int _nResolvedClassCount = qBound(2, _nClassCount, 9);
+    if (qFuzzyCompare(_dMinimumValue, _dMaximumValue)) {
+        QgsSymbol* _pSymbol = QgsSymbol::defaultSymbol(_pVectorLayer->geometryType());
+        if (_pSymbol == nullptr) {
+            return;
+        }
+        applyCommonSymbolStyle(_pSymbol, QColor("#1677FF"), 1.0, 0.85);
+        QgsRangeList _vRanges;
+        _vRanges.append(QgsRendererRange(
+            _dMinimumValue,
+            _dMaximumValue,
+            _pSymbol,
+            QString::number(_dMinimumValue, 'f', 2)));
+        _pVectorLayer->setRenderer(
+            new QgsGraduatedSymbolRenderer(_strFieldName, _vRanges));
+        _pVectorLayer->triggerRepaint();
+        mpCanvas->refresh();
+        return;
+    }
+
+    const double _dStep =
+        (_dMaximumValue - _dMinimumValue) / static_cast<double>(_nResolvedClassCount);
+    QgsRangeList _vRanges;
+    for (int _nClassIdx = 0; _nClassIdx < _nResolvedClassCount; ++_nClassIdx) {
+        const double _dLowerValue = _dMinimumValue + _dStep * _nClassIdx;
+        const double _dUpperValue = (_nClassIdx == _nResolvedClassCount - 1)
+            ? _dMaximumValue
+            : _dMinimumValue + _dStep * (_nClassIdx + 1);
+
+        QgsSymbol* _pSymbol = QgsSymbol::defaultSymbol(_pVectorLayer->geometryType());
+        if (_pSymbol == nullptr) {
+            continue;
+        }
+        applyCommonSymbolStyle(
+            _pSymbol,
+            rampColor(static_cast<double>(_nClassIdx)
+                / qMax(1, _nResolvedClassCount - 1)),
+            1.0,
+            0.88);
+        _vRanges.append(QgsRendererRange(
+            _dLowerValue,
+            _dUpperValue,
+            _pSymbol,
+            tr("%1 - %2")
+                .arg(_dLowerValue, 0, 'f', 2)
+                .arg(_dUpperValue, 0, 'f', 2)));
+    }
+
+    if (_vRanges.isEmpty()) {
+        return;
+    }
+
+    _pVectorLayer->setRenderer(
+        new QgsGraduatedSymbolRenderer(_strFieldName, _vRanges));
+    _pVectorLayer->triggerRepaint();
+    mpCanvas->refresh();
+}
+
+void MapCanvasWidget::applyRasterGrayRenderer(const QString& _strLayerId)
+{
+    QgsRasterLayer* _pRasterLayer =
+        qobject_cast<QgsRasterLayer*>(findLayerById(_strLayerId));
+    if (_pRasterLayer == nullptr || _pRasterLayer->dataProvider() == nullptr) {
+        qWarning() << "[MapCanvasWidget] applyRasterGrayRenderer: raster layer not found:"
+                   << _strLayerId;
+        return;
+    }
+
+    const int _nBand = 1;
+    const QgsRasterBandStats _statsBand =
+        _pRasterLayer->dataProvider()->bandStatistics(_nBand);
+    QgsSingleBandGrayRenderer* _pRenderer =
+        new QgsSingleBandGrayRenderer(_pRasterLayer->dataProvider(), _nBand);
+    QgsContrastEnhancement* _pContrast = new QgsContrastEnhancement(
+        _pRasterLayer->dataProvider()->dataType(_nBand));
+    _pContrast->setMinimumValue(_statsBand.minimumValue);
+    _pContrast->setMaximumValue(_statsBand.maximumValue);
+    _pContrast->setContrastEnhancementAlgorithm(
+        QgsContrastEnhancement::StretchToMinimumMaximum);
+    _pRenderer->setContrastEnhancement(_pContrast);
+
+    _pRasterLayer->setRenderer(_pRenderer);
+    _pRasterLayer->triggerRepaint();
+    mpCanvas->refresh();
+}
+
+void MapCanvasWidget::applyRasterPseudoColorRenderer(const QString& _strLayerId)
+{
+    QgsRasterLayer* _pRasterLayer =
+        qobject_cast<QgsRasterLayer*>(findLayerById(_strLayerId));
+    if (_pRasterLayer == nullptr || _pRasterLayer->dataProvider() == nullptr) {
+        qWarning() << "[MapCanvasWidget] applyRasterPseudoColorRenderer: raster layer not found:"
+                   << _strLayerId;
+        return;
+    }
+
+    const int _nBand = 1;
+    const QgsRasterBandStats _statsBand =
+        _pRasterLayer->dataProvider()->bandStatistics(_nBand);
+    const double _dMinimumValue = _statsBand.minimumValue;
+    const double _dMaximumValue = _statsBand.maximumValue;
+    const double _dMiddleValue = (_dMinimumValue + _dMaximumValue) * 0.5;
+
+    QList<QgsColorRampShader::ColorRampItem> _vItems;
+    _vItems << QgsColorRampShader::ColorRampItem(
+        _dMinimumValue, QColor("#2B6CB0"), tr("低值"));
+    _vItems << QgsColorRampShader::ColorRampItem(
+        _dMiddleValue, QColor("#F6E05E"), tr("中值"));
+    _vItems << QgsColorRampShader::ColorRampItem(
+        _dMaximumValue, QColor("#C53030"), tr("高值"));
+
+    QgsColorRampShader* _pColorRamp = new QgsColorRampShader(
+        _dMinimumValue,
+        _dMaximumValue,
+        nullptr,
+        Qgis::ShaderInterpolationMethod::Linear);
+    _pColorRamp->setColorRampItemList(_vItems);
+
+    QgsRasterShader* _pShader = new QgsRasterShader(
+        _dMinimumValue,
+        _dMaximumValue);
+    _pShader->setRasterShaderFunction(_pColorRamp);
+
+    QgsSingleBandPseudoColorRenderer* _pRenderer =
+        new QgsSingleBandPseudoColorRenderer(
+            _pRasterLayer->dataProvider(),
+            _nBand,
+            _pShader);
+    _pRenderer->setClassificationMin(_dMinimumValue);
+    _pRenderer->setClassificationMax(_dMaximumValue);
+
+    _pRasterLayer->setRenderer(_pRenderer);
+    _pRasterLayer->triggerRepaint();
+    mpCanvas->refresh();
+}
+
 void MapCanvasWidget::applyHighlightStyle(QgsVectorLayer* _pLayerInput)
 {
     if (_pLayerInput == nullptr) {
@@ -365,6 +667,55 @@ void MapCanvasWidget::applyHighlightStyle(QgsVectorLayer* _pLayerInput)
     }
 
     _pLayerInput->setRenderer(new QgsSingleSymbolRenderer(_pSymbol));
+}
+
+QgsMapLayer* MapCanvasWidget::findLayerById(const QString& _strLayerId) const
+{
+    for (QgsMapLayer* _pLayer : mpvLayers) {
+        if (_pLayer != nullptr && _pLayer->id() == _strLayerId) {
+            return _pLayer;
+        }
+    }
+    return QgsProject::instance()->mapLayer(_strLayerId);
+}
+
+void MapCanvasWidget::applyCommonSymbolStyle(QgsSymbol* _pSymbol,
+    const QColor& _colorSymbol,
+    double _dSizeValue,
+    double _dOpacity) const
+{
+    if (_pSymbol == nullptr) {
+        return;
+    }
+
+    _pSymbol->setColor(_colorSymbol);
+    _pSymbol->setOpacity(qBound(0.0, _dOpacity, 1.0));
+
+    QgsLineSymbol* _pLineSymbol = dynamic_cast<QgsLineSymbol*>(_pSymbol);
+    if (_pLineSymbol != nullptr) {
+        _pLineSymbol->setWidth(qMax(0.1, _dSizeValue));
+    }
+
+    QgsMarkerSymbol* _pMarkerSymbol = dynamic_cast<QgsMarkerSymbol*>(_pSymbol);
+    if (_pMarkerSymbol != nullptr) {
+        _pMarkerSymbol->setSize(qMax(0.5, _dSizeValue));
+    }
+
+}
+
+bool MapCanvasWidget::isNumericField(QgsVectorLayer* _pLayerInput,
+    const QString& _strFieldName) const
+{
+    if (_pLayerInput == nullptr) {
+        return false;
+    }
+
+    const int _nFieldIdx = _pLayerInput->fields().indexOf(_strFieldName);
+    if (_nFieldIdx < 0) {
+        return false;
+    }
+
+    return isNumericVariantType(_pLayerInput->fields().at(_nFieldIdx).type());
 }
 
 QgsRectangle MapCanvasWidget::layerExtentInCanvasCrs(QgsMapLayer* _pLayerInput) const

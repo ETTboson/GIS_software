@@ -29,7 +29,8 @@ public:
         BufferAnalysis,
         OverlayAnalysis,
         AttributeQuery,
-        SpatialQuery
+        SpatialQuery,
+        ProximityQuery
     };
 
     enum class AnalysisTurnKind
@@ -164,6 +165,11 @@ private:
         bool bHasSpatialTargetAssetId = false;           // 是否已有空间查询目标区域资产 ID
         QString strSpatialTargetAssetId;                 // 空间查询目标区域资产 ID
         QString strSpatialRelationId = QStringLiteral("intersects"); // 空间查询关系
+        bool bHasSourceAssetId = false;                  // 是否已有显式源资产 ID
+        QString strSourceAssetId;                        // 显式源资产 ID 或别名
+        bool bHasProximityReferenceAssetId = false;       // 是否已有邻近查询参考资产 ID
+        QString strProximityReferenceAssetId;             // 邻近查询参考资产 ID
+        bool bProximityInvertMatch = false;               // 邻近查询是否返回距离范围外要素
         QStringList vMissingParams;                     // 当前缺失参数列表
         QString strLastError;                           // 最近错误文本
     };
@@ -172,6 +178,11 @@ private:
     void recalculateMissingParams();
     bool tryAutoSelectSingleOverlayAsset();
     bool tryAutoSelectSingleSpatialTargetAsset();
+    bool tryResolveAssetRef(const QString& _strAssetRef,
+        QString& _strAssetId) const;
+    bool tryExtractProximityAssets(const QString& _strText,
+        QString& _strSourceAssetId,
+        QString& _strReferenceAssetId) const;
     TransitionResult buildExecutionTransition() const;
     TransitionResult applyStateUpdateArgs(const QJsonObject& _jsonArgs);
     QJsonArray extractRecentDialogue(const QJsonArray& _jsonRawHistory,

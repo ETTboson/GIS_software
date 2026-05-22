@@ -10,6 +10,7 @@
 #include "ui/components/imagebutton.h"
 #include "ui/docks/aidockwidget.h"
 #include "ui/docks/analysisworkspacedockwidget.h"
+#include "ui/map/map3dviewwidget.h"
 #include "ui/map/mapcanvasmanager.h"
 #include "ui/map/mapcanvaswidget.h"
 #include "ui/visualization/visualizationmanager.h"
@@ -18,29 +19,35 @@
 
 #include <QAbstractButton>
 #include <QAction>
+#include <QColorDialog>
 #include <QFileDialog>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QJsonValue>
 #include <QLabel>
+#include <QInputDialog>
+#include <QMainWindow>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QFileInfo>
+#include <QPushButton>
 #include <QSignalBlocker>
 #include <QStatusBar>
 #include <QStringList>
 #include <QTableView>
 #include <QTextEdit>
 #include <QVBoxLayout>
-#include <QPushButton>
 
 #include <qgslayertreemodel.h>
 #include <qgslayertreemapcanvasbridge.h>
 #include <qgsfeature.h>
 #include <qgsfeatureiterator.h>
 #include <qgsfeaturesink.h>
+#include <qgsfields.h>
 #include <qgsmaplayer.h>
 #include <qgsproject.h>
+#include <qgsrasterlayer.h>
 #include <qgsvectorfilewriter.h>
 #include <qgsvectorlayer.h>
 
@@ -86,6 +93,9 @@ QString toolDisplayName(const QString& _strToolId)
     }
     if (_strToolId == "spatial_query") {
         return QObject::tr("空间查询");
+    }
+    if (_strToolId == "proximity_query") {
+        return QObject::tr("邻近查询");
     }
     if (_strToolId == "raster_calc") {
         return QObject::tr("栅格计算");
@@ -136,6 +146,123 @@ bool isValidSpatialRelation(const QString& _strRelationId)
         || _strNormalized == QStringLiteral("intersect")
         || _strNormalized == QStringLiteral("within")
         || _strNormalized == QStringLiteral("contains");
+}
+
+QStringList aliasKeywordsForAssetRef(const QString& _strAssetRef)
+{
+    const QString _strRef = _strAssetRef.trimmed().toLower();
+    QStringList _vKeywords;
+    if (_strRef.contains(QString::fromUtf8("建筑"))
+        || _strRef.contains(QStringLiteral("building"))) {
+        _vKeywords << QStringLiteral("buildings") << QString::fromUtf8("建筑");
+    }
+    if (_strRef.contains(QString::fromUtf8("道路"))
+        || _strRef.contains(QStringLiteral("road"))) {
+        _vKeywords << QStringLiteral("roads") << QString::fromUtf8("道路");
+    }
+    if (_strRef.contains(QStringLiteral("poi"))) {
+        _vKeywords << QStringLiteral("pois") << QStringLiteral("poi");
+    }
+    if (_strRef.contains(QString::fromUtf8("城市"))
+        || _strRef.contains(QString::fromUtf8("地点"))
+        || _strRef.contains(QStringLiteral("place"))) {
+        _vKeywords << QStringLiteral("places") << QStringLiteral("place");
+    }
+    if (_strRef.contains(QString::fromUtf8("水系"))
+        || _strRef.contains(QString::fromUtf8("河流"))
+        || _strRef.contains(QStringLiteral("water"))) {
+        _vKeywords << QStringLiteral("waterways") << QStringLiteral("water");
+    }
+    if (_strRef.contains(QString::fromUtf8("人口"))
+        || _strRef.contains(QStringLiteral("population"))) {
+        _vKeywords << QStringLiteral("places") << QStringLiteral("population");
+    }
+    if (_strRef.contains(QString::fromUtf8("学校"))
+        || _strRef.contains(QStringLiteral("school"))) {
+        _vKeywords << QStringLiteral("schools") << QStringLiteral("school")
+                   << QStringLiteral("poi") << QStringLiteral("pois");
+    }
+    if (_strRef.contains(QString::fromUtf8("医院"))
+        || _strRef.contains(QStringLiteral("hospital"))
+        || _strRef.contains(QStringLiteral("clinic"))) {
+        _vKeywords << QStringLiteral("hospitals") << QStringLiteral("hospital")
+                   << QStringLiteral("clinic") << QStringLiteral("poi")
+                   << QStringLiteral("pois");
+    }
+    if (_vKeywords.isEmpty() && !_strRef.isEmpty()) {
+        _vKeywords << _strRef;
+    }
+    return _vKeywords;
+}
+
+QJsonArray buildDemoAliasArray(const AnalysisDataAsset& _assetInput)
+{
+    const QString _strHaystack = QStringLiteral("%1 %2 %3")
+        .arg(_assetInput.strName,
+            _assetInput.strSourcePath,
+            _assetInput.dataVector.vFieldNames.join(QStringLiteral(" ")))
+        .toLower();
+    QJsonArray _jsonAliases;
+    if (_strHaystack.contains(QStringLiteral("building"))) {
+        _jsonAliases.append(QString::fromUtf8("建筑"));
+        _jsonAliases.append(QStringLiteral("buildings"));
+    }
+    if (_strHaystack.contains(QStringLiteral("road"))) {
+        _jsonAliases.append(QString::fromUtf8("道路"));
+        _jsonAliases.append(QStringLiteral("roads"));
+    }
+    if (_strHaystack.contains(QStringLiteral("poi"))) {
+        _jsonAliases.append(QStringLiteral("POI"));
+        _jsonAliases.append(QStringLiteral("pois"));
+        _jsonAliases.append(QString::fromUtf8("学校"));
+        _jsonAliases.append(QStringLiteral("schools"));
+        _jsonAliases.append(QString::fromUtf8("医院"));
+        _jsonAliases.append(QStringLiteral("hospitals"));
+    }
+    if (_strHaystack.contains(QStringLiteral("place"))
+        || _strHaystack.contains(QStringLiteral("population"))) {
+        _jsonAliases.append(QString::fromUtf8("城市"));
+        _jsonAliases.append(QStringLiteral("places"));
+        _jsonAliases.append(QStringLiteral("population"));
+    }
+    if (_strHaystack.contains(QStringLiteral("water"))) {
+        _jsonAliases.append(QString::fromUtf8("水系"));
+        _jsonAliases.append(QStringLiteral("waterways"));
+    }
+    return _jsonAliases;
+}
+
+bool assetHasField(const AnalysisDataAsset& _assetInput,
+    const QString& _strFieldName)
+{
+    for (const QString& _strCurrentField : _assetInput.dataVector.vFieldNames) {
+        if (_strCurrentField.compare(_strFieldName, Qt::CaseInsensitive) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+QString proximitySubsetForAssetRef(const AnalysisDataAsset& _assetInput,
+    const QString& _strAssetRef)
+{
+    if (!assetHasField(_assetInput, QStringLiteral("fclass"))) {
+        return QString();
+    }
+
+    const QString _strRef = _strAssetRef.trimmed().toLower();
+    if (_strRef.contains(QString::fromUtf8("学校"))
+        || _strRef.contains(QStringLiteral("school"))) {
+        return QStringLiteral(
+            "\"fclass\" IN ('school','college','university','kindergarten')");
+    }
+    if (_strRef.contains(QString::fromUtf8("医院"))
+        || _strRef.contains(QStringLiteral("hospital"))
+        || _strRef.contains(QStringLiteral("clinic"))) {
+        return QStringLiteral(
+            "\"fclass\" IN ('hospital','clinic','doctors')");
+    }
+    return QString();
 }
 
 QJsonArray capabilityArrayToJson(AnalysisCapabilities _flagsCapabilities)
@@ -204,6 +331,7 @@ QJsonObject buildAssetContextObject(const AnalysisDataAsset& _assetInput)
     _jsonAsset["vector_database_path"] = _assetInput.dataVector.strDatabasePath;
     _jsonAsset["vector_table_name"] = _assetInput.dataVector.strTableName;
     _jsonAsset["vector_geometry_column"] = _assetInput.dataVector.strGeometryColumn;
+    _jsonAsset["demo_aliases"] = buildDemoAliasArray(_assetInput);
     return _jsonAsset;
 }
 
@@ -345,12 +473,30 @@ bool MainWindow::executeAnalysisTool(const QString& _strToolName,
     _strResult.clear();
     _strError.clear();
 
-    if (mpDataRepository == nullptr || !mpDataRepository->hasCurrentAsset()) {
-        _strError = tr("当前没有已选择的分析资产，请先导入并选择数据");
+    if (mpDataRepository == nullptr || !mpDataRepository->hasAssets()) {
+        _strError = tr("当前没有已导入的分析资产，请先导入数据");
+        return false;
+    }
+
+    const QString _strSourceAssetRef =
+        _jsonArgs["source_asset_id"].toString().trimmed();
+    AnalysisDataAsset _assetSource;
+    if (!_strSourceAssetRef.isEmpty()) {
+        _assetSource = findAssetByIdOrAlias(_strSourceAssetRef);
+        if (_assetSource.strAssetId.trimmed().isEmpty()) {
+            _strError = tr("参数错误：未找到 source_asset_id 对应的分析资产：%1")
+                .arg(_strSourceAssetRef);
+            return false;
+        }
+    } else if (mpDataRepository->hasCurrentAsset()) {
+        _assetSource = mpDataRepository->currentAsset();
+    } else {
+        _strError = tr("当前没有已选择的分析资产，请提供 source_asset_id 或先选择数据");
         return false;
     }
 
     AnalysisRunConfig _configRun;
+    _configRun.strSourceAssetId = _assetSource.strAssetId;
     if (_strToolName == "run_basic_statistics") {
         _configRun.strToolId = "basic_statistics";
     } else if (_strToolName == "run_frequency_statistics") {
@@ -401,7 +547,7 @@ bool MainWindow::executeAnalysisTool(const QString& _strToolName,
         }
 
         const AnalysisDataAsset _assetOverlay =
-            mpDataRepository->findAssetById(_strOverlayAssetId);
+            findAssetByIdOrAlias(_strOverlayAssetId);
         if (_assetOverlay.strAssetId.trimmed().isEmpty()) {
             _strError = tr("参数错误：未找到 overlay_asset_id 对应的分析资产");
             return false;
@@ -414,7 +560,7 @@ bool MainWindow::executeAnalysisTool(const QString& _strToolName,
         }
 
         _configRun.strToolId = "overlay_analysis";
-        _configRun.strOverlayAssetId = _strOverlayAssetId;
+        _configRun.strOverlayAssetId = _assetOverlay.strAssetId;
         _configRun.eOverlayOperation = _eOverlayOperation;
     } else if (_strToolName == "run_attribute_query") {
         const QString _strFieldName =
@@ -451,7 +597,7 @@ bool MainWindow::executeAnalysisTool(const QString& _strToolName,
         }
 
         const AnalysisDataAsset _assetTarget =
-            mpDataRepository->findAssetById(_strTargetAssetId);
+            findAssetByIdOrAlias(_strTargetAssetId);
         if (_assetTarget.strAssetId.trimmed().isEmpty()) {
             _strError = tr("参数错误：未找到 target_asset_id 对应的分析资产");
             return false;
@@ -464,17 +610,68 @@ bool MainWindow::executeAnalysisTool(const QString& _strToolName,
         }
 
         _configRun.strToolId = "spatial_query";
-        _configRun.strSpatialTargetAssetId = _strTargetAssetId;
+        _configRun.strSpatialTargetAssetId = _assetTarget.strAssetId;
         _configRun.strSpatialRelationId = _strRelationId;
+    } else if (_strToolName == "run_proximity_query") {
+        const QString _strReferenceAssetId =
+            _jsonArgs["reference_asset_id"].toString().trimmed();
+        const double _dDistance = _jsonArgs["distance"].toDouble(0.0);
+        const int _nSegments = _jsonArgs.contains("segments")
+            ? _jsonArgs["segments"].toInt(8)
+            : 8;
+        const bool _bInvertMatch = _jsonArgs.contains("invert_match")
+            && _jsonArgs["invert_match"].toBool(false);
+        const QString _strSourceSubsetExpression =
+            _jsonArgs["source_subset_expression"].toString().trimmed();
+        const QString _strReferenceSubsetExpression =
+            _jsonArgs["reference_subset_expression"].toString().trimmed();
+        if (_strReferenceAssetId.isEmpty()) {
+            _strError = tr("参数错误：reference_asset_id 不能为空");
+            return false;
+        }
+        if (_dDistance <= 0.0) {
+            _strError = tr("参数错误：distance 必须大于 0");
+            return false;
+        }
+        if (_nSegments <= 0) {
+            _strError = tr("参数错误：segments 必须大于 0");
+            return false;
+        }
+
+        const AnalysisDataAsset _assetReference =
+            findAssetByIdOrAlias(_strReferenceAssetId);
+        if (_assetReference.strAssetId.trimmed().isEmpty()) {
+            _strError = tr("参数错误：未找到 reference_asset_id 对应的分析资产");
+            return false;
+        }
+        if (!_assetReference.flagsCapabilities.testFlag(
+            AnalysisCapability::SpatialVector)) {
+            _strError = tr("参数错误：参考资产“%1”不是可用矢量资产")
+                .arg(_assetReference.strName);
+            return false;
+        }
+
+        _configRun.strToolId = "proximity_query";
+        _configRun.strProximityReferenceAssetId = _assetReference.strAssetId;
+        _configRun.bProximityInvertMatch = _bInvertMatch;
+        _configRun.strSourceSubsetExpression =
+            _strSourceSubsetExpression.isEmpty()
+            ? proximitySubsetForAssetRef(_assetSource, _strSourceAssetRef)
+            : _strSourceSubsetExpression;
+        _configRun.strProximityReferenceSubsetExpression =
+            _strReferenceSubsetExpression.isEmpty()
+            ? proximitySubsetForAssetRef(_assetReference, _strReferenceAssetId)
+            : _strReferenceSubsetExpression;
+        _configRun.dProximityDistance = _dDistance;
+        _configRun.nBufferSegments = _nSegments;
     } else {
         _strError = tr("未知分析工具：%1").arg(_strToolName);
         return false;
     }
 
-    const AnalysisDataAsset _assetCurrent = mpDataRepository->currentAsset();
-    if (!assetSupportsTool(_assetCurrent, _configRun.strToolId)) {
-        _strError = tr("当前资产“%1”不支持工具“%2”")
-            .arg(_assetCurrent.strName, toolDisplayName(_configRun.strToolId));
+    if (!assetSupportsTool(_assetSource, _configRun.strToolId)) {
+        _strError = tr("源资产“%1”不支持工具“%2”")
+            .arg(_assetSource.strName, toolDisplayName(_configRun.strToolId));
         return false;
     }
 
@@ -519,7 +716,7 @@ bool MainWindow::executeAnalysisTool(const QString& _strToolName,
         this,
         _captureResult);
 
-    runToolForAsset(_assetCurrent, _configRun);
+    runToolForAsset(_assetSource, _configRun);
 
     disconnect(_okConnStat);
     disconnect(_failConnStat);
@@ -719,6 +916,8 @@ void MainWindow::initConnections()
         this, &MainWindow::onNavZoomOut);
     connect(mpUI->actionFitView, &QAction::triggered,
         this, &MainWindow::onNavFitAll);
+    connect(mpUI->actionNew3DView, &QAction::triggered,
+        this, &MainWindow::onNew3DView);
     connect(mpUI->actionAIAnalyze, &QAction::triggered,
         this, &MainWindow::onAIAnalyze);
     connect(mpUI->actionAIChat, &QAction::triggered,
@@ -917,7 +1116,8 @@ bool MainWindow::assetSupportsTool(const AnalysisDataAsset& _assetInput,
     }
     if (_strToolId == "buffer_analysis"
         || _strToolId == "overlay_analysis"
-        || _strToolId == "spatial_query") {
+        || _strToolId == "spatial_query"
+        || _strToolId == "proximity_query") {
         return _assetInput.flagsCapabilities.testFlag(AnalysisCapability::SpatialVector);
     }
     if (_strToolId == "attribute_query") {
@@ -1023,6 +1223,20 @@ void MainWindow::runToolForAsset(const AnalysisDataAsset& _assetInput,
             _configRun.strSpatialRelationId);
         return;
     }
+    if (_configRun.strToolId == "proximity_query") {
+        const AnalysisDataAsset _assetReference = (mpDataRepository == nullptr)
+            ? AnalysisDataAsset()
+            : mpDataRepository->findAssetById(_configRun.strProximityReferenceAssetId);
+        mpAttributeQueryService->runProximityQuery(
+            _assetInput,
+            _assetReference,
+            _configRun.dProximityDistance,
+            _configRun.nBufferSegments,
+            _configRun.bProximityInvertMatch,
+            _configRun.strSourceSubsetExpression,
+            _configRun.strProximityReferenceSubsetExpression);
+        return;
+    }
     if (_configRun.strToolId == "attribute_query") {
         mpAttributeQueryService->runAttributeQuery(
             _assetInput,
@@ -1037,6 +1251,48 @@ void MainWindow::runToolForAsset(const AnalysisDataAsset& _assetInput,
         _configRun.strToolId,
         tr("工具“%1”当前仅作为能力占位展示。").arg(toolDisplayName(_configRun.strToolId)));
     mpctrlLabelStatus->setText(tr("  就绪  "));
+}
+
+AnalysisDataAsset MainWindow::findAssetByIdOrAlias(
+    const QString& _strAssetRef) const
+{
+    if (mpDataRepository == nullptr || _strAssetRef.trimmed().isEmpty()) {
+        return AnalysisDataAsset();
+    }
+
+    AnalysisDataAsset _assetMatched =
+        mpDataRepository->findAssetById(_strAssetRef.trimmed());
+    if (!_assetMatched.strAssetId.trimmed().isEmpty()) {
+        return _assetMatched;
+    }
+
+    const QString _strRef = _strAssetRef.trimmed().toLower();
+    const QStringList _vKeywords = aliasKeywordsForAssetRef(_strRef);
+    const QList<AnalysisDataAsset> _vAssets = mpDataRepository->getAssets();
+    for (const AnalysisDataAsset& _assetCurrent : _vAssets) {
+        const QString _strHaystack = QStringLiteral("%1 %2 %3 %4")
+            .arg(_assetCurrent.strName,
+                _assetCurrent.strSourcePath,
+                _assetCurrent.dataVector.strSourceUri,
+                _assetCurrent.dataVector.vFieldNames.join(QStringLiteral(" ")))
+            .toLower();
+        QString _strAliasHaystack = _strHaystack;
+        const QJsonArray _jsonAliases = buildDemoAliasArray(_assetCurrent);
+        for (const QJsonValue& _jsonAliasVal : _jsonAliases) {
+            _strAliasHaystack += QStringLiteral(" %1")
+                .arg(_jsonAliasVal.toString().toLower());
+        }
+        for (const QString& _strKeyword : _vKeywords) {
+            if (_strKeyword.trimmed().isEmpty()) {
+                continue;
+            }
+            if (_strAliasHaystack.contains(_strKeyword.trimmed().toLower())) {
+                return _assetCurrent;
+            }
+        }
+    }
+
+    return AnalysisDataAsset();
 }
 
 void MainWindow::cachePendingRun(const QString& _strAssetId,
@@ -1056,36 +1312,46 @@ void MainWindow::clearPendingRun()
 
 void MainWindow::onOpenData()
 {
-    const QString _strFilePath = QFileDialog::getOpenFileName(
+    const QStringList _vFilePaths = QFileDialog::getOpenFileNames(
         this,
         tr("打开分析数据"),
         QString(),
         tr("分析数据 (*.csv *.xml *.asc *.txt *.shp *.geojson *.sqlite *.db *.tif *.tiff *.img);;"
            "CSV 数据 (*.csv);;XML 数据 (*.xml);;栅格数据 (*.asc *.txt *.tif *.tiff *.img);;"
            "矢量数据 (*.shp *.geojson);;空间数据库 (*.sqlite *.db);;全部文件 (*)"));
-    if (_strFilePath.isEmpty()) {
+    if (_vFilePaths.isEmpty()) {
         return;
     }
 
-    mpctrlLabelStatus->setText(tr("  正在解析分析数据...  "));
-    mpDataService->openDataForAnalysis(_strFilePath);
+    mpctrlLabelStatus->setText(
+        tr("  正在解析 %1 个分析数据...  ").arg(_vFilePaths.size()));
+    for (const QString& _strFilePath : _vFilePaths) {
+        mpDataService->openDataForAnalysis(_strFilePath);
+    }
+    mpctrlLabelStatus->setText(
+        tr("  已完成 %1 个分析数据加载请求  ").arg(_vFilePaths.size()));
 }
 
 void MainWindow::onAddLayer()
 {
-    const QString _strFilePath = QFileDialog::getOpenFileName(
+    const QStringList _vFilePaths = QFileDialog::getOpenFileNames(
         this,
         tr("添加图层"),
         QString(),
         tr("空间图层 (*.shp *.geojson *.sqlite *.db *.tif *.tiff *.img);;"
            "矢量图层 (*.shp *.geojson);;空间数据库 (*.sqlite *.db);;"
            "栅格图层 (*.tif *.tiff *.img);;全部文件 (*)"));
-    if (_strFilePath.isEmpty()) {
+    if (_vFilePaths.isEmpty()) {
         return;
     }
 
-    mpctrlLabelStatus->setText(tr("  正在添加地图图层...  "));
-    mpDataService->loadLayerToMap(_strFilePath);
+    mpctrlLabelStatus->setText(
+        tr("  正在添加 %1 个地图图层...  ").arg(_vFilePaths.size()));
+    for (const QString& _strFilePath : _vFilePaths) {
+        mpDataService->loadLayerToMap(_strFilePath);
+    }
+    mpctrlLabelStatus->setText(
+        tr("  已完成 %1 个地图图层加载请求  ").arg(_vFilePaths.size()));
 }
 
 void MainWindow::onSaveProject()
@@ -1239,6 +1505,39 @@ void MainWindow::onSpatialQuery()
 void MainWindow::onRasterCalc()
 {
     openToolShortcut("raster_calc");
+}
+
+void MainWindow::onNew3DView()
+{
+    const QString _strDemPath = QFileDialog::getOpenFileName(
+        this,
+        tr("新建3D视图"),
+        QString(),
+        tr("DEM/栅格数据 (*.tif *.tiff *.img *.asc);;全部文件 (*)"));
+    if (_strDemPath.isEmpty()) {
+        return;
+    }
+
+    QMainWindow* _pWindow3D = new QMainWindow();
+    _pWindow3D->setAttribute(Qt::WA_DeleteOnClose);
+
+    Map3DViewWidget* _pView3D = new Map3DViewWidget(_pWindow3D);
+    if (!_pView3D->initializeFromDem(_strDemPath)) {
+        delete _pWindow3D;
+        QMessageBox::warning(this,
+            tr("新建3D视图"),
+            tr("无法加载所选 DEM/栅格数据，请确认文件有效: %1").arg(_strDemPath));
+        return;
+    }
+
+    const QString _strLayerName = QFileInfo(_strDemPath).fileName();
+    _pWindow3D->setCentralWidget(_pView3D);
+    _pWindow3D->setWindowTitle(tr("3D视图 - %1").arg(_strLayerName));
+    _pWindow3D->resize(1100, 760);
+    _pWindow3D->show();
+
+    mpctrlLabelStatus->setText(
+        tr("  已创建3D视图: %1  ").arg(_strLayerName));
 }
 
 void MainWindow::onAIAnalyze()
@@ -1457,12 +1756,41 @@ void MainWindow::onLayerTreeContextMenuRequested(const QPoint& _posMenu)
 
     QMenu _menuLayer(mpctrlLayerTreeView);
     QAction* _pActionZoom = _menuLayer.addAction(tr("缩放到图层范围"));
+    _menuLayer.addSeparator();
+    QAction* _pActionSimpleSymbol = _menuLayer.addAction(tr("简单符号"));
+    QAction* _pActionFieldRenderer = _menuLayer.addAction(tr("字段渲染"));
+    QAction* _pActionRasterGray = _menuLayer.addAction(tr("栅格灰度拉伸"));
+    QAction* _pActionRasterPseudo = _menuLayer.addAction(tr("栅格伪彩色"));
+    _menuLayer.addSeparator();
     QAction* _pActionRemove = _menuLayer.addAction(tr("移除图层"));
+
+    const bool _bIsVector = qobject_cast<QgsVectorLayer*>(_pLayerCurrent) != nullptr;
+    const bool _bIsRaster = qobject_cast<QgsRasterLayer*>(_pLayerCurrent) != nullptr;
+    _pActionSimpleSymbol->setEnabled(_bIsVector);
+    _pActionFieldRenderer->setEnabled(_bIsVector);
+    _pActionRasterGray->setEnabled(_bIsRaster);
+    _pActionRasterPseudo->setEnabled(_bIsRaster);
 
     QAction* _pActionTriggered = _menuLayer.exec(
         mpctrlLayerTreeView->viewport()->mapToGlobal(_posMenu));
     if (_pActionTriggered == _pActionZoom) {
         onZoomToSelectedLayer();
+        return;
+    }
+    if (_pActionTriggered == _pActionSimpleSymbol) {
+        onApplySimpleSymbol();
+        return;
+    }
+    if (_pActionTriggered == _pActionFieldRenderer) {
+        onApplyFieldRenderer();
+        return;
+    }
+    if (_pActionTriggered == _pActionRasterGray) {
+        onApplyRasterGrayRenderer();
+        return;
+    }
+    if (_pActionTriggered == _pActionRasterPseudo) {
+        onApplyRasterPseudoColorRenderer();
         return;
     }
     if (_pActionTriggered == _pActionRemove) {
@@ -1504,6 +1832,162 @@ void MainWindow::onZoomToSelectedLayer()
     _pCanvas->zoomToLayerExtent(_pLayerCurrent->id());
     mpctrlLabelStatus->setText(
         tr("  已缩放到图层范围: %1  ").arg(_pLayerCurrent->name()));
+}
+
+void MainWindow::onApplySimpleSymbol()
+{
+    QgsMapLayer* _pLayerCurrent = currentSelectedLayer();
+    MapCanvasWidget* _pCanvas = mpMapCanvasManager->activeCanvas();
+    if (_pLayerCurrent == nullptr || _pCanvas == nullptr) {
+        return;
+    }
+    if (qobject_cast<QgsVectorLayer*>(_pLayerCurrent) == nullptr) {
+        QMessageBox::information(this,
+            tr("简单符号"),
+            tr("简单符号仅支持矢量图层。"));
+        return;
+    }
+
+    const QColor _colorSymbol = QColorDialog::getColor(
+        QColor("#1677FF"),
+        this,
+        tr("选择符号颜色"),
+        QColorDialog::ShowAlphaChannel);
+    if (!_colorSymbol.isValid()) {
+        return;
+    }
+
+    bool _bOk = false;
+    const double _dSizeValue = QInputDialog::getDouble(
+        this,
+        tr("简单符号"),
+        tr("线宽 / 点大小"),
+        1.5,
+        0.1,
+        30.0,
+        1,
+        &_bOk);
+    if (!_bOk) {
+        return;
+    }
+
+    const int _nOpacityPercent = QInputDialog::getInt(
+        this,
+        tr("简单符号"),
+        tr("透明度百分比"),
+        85,
+        5,
+        100,
+        5,
+        &_bOk);
+    if (!_bOk) {
+        return;
+    }
+
+    _pCanvas->applyVectorSimpleStyle(
+        _pLayerCurrent->id(),
+        _colorSymbol,
+        _dSizeValue,
+        static_cast<double>(_nOpacityPercent) / 100.0);
+    mpctrlLabelStatus->setText(
+        tr("  已应用简单符号: %1  ").arg(_pLayerCurrent->name()));
+}
+
+void MainWindow::onApplyFieldRenderer()
+{
+    QgsMapLayer* _pLayerCurrent = currentSelectedLayer();
+    MapCanvasWidget* _pCanvas = mpMapCanvasManager->activeCanvas();
+    QgsVectorLayer* _pVectorLayer = qobject_cast<QgsVectorLayer*>(_pLayerCurrent);
+    if (_pVectorLayer == nullptr || _pCanvas == nullptr) {
+        QMessageBox::information(this,
+            tr("字段渲染"),
+            tr("字段渲染仅支持矢量图层。"));
+        return;
+    }
+
+    QStringList _vFieldNames;
+    const QgsFields _fields = _pVectorLayer->fields();
+    for (int _nFieldIdx = 0; _nFieldIdx < _fields.size(); ++_nFieldIdx) {
+        _vFieldNames << _fields.at(_nFieldIdx).name();
+    }
+    if (_vFieldNames.isEmpty()) {
+        QMessageBox::information(this,
+            tr("字段渲染"),
+            tr("当前图层没有可用字段。"));
+        return;
+    }
+
+    bool _bOk = false;
+    const QString _strFieldName = QInputDialog::getItem(
+        this,
+        tr("字段渲染"),
+        tr("选择字段"),
+        _vFieldNames,
+        0,
+        false,
+        &_bOk);
+    if (!_bOk || _strFieldName.trimmed().isEmpty()) {
+        return;
+    }
+
+    const int _nClassCount = QInputDialog::getInt(
+        this,
+        tr("字段渲染"),
+        tr("数值字段分级数量"),
+        5,
+        2,
+        9,
+        1,
+        &_bOk);
+    if (!_bOk) {
+        return;
+    }
+
+    _pCanvas->applyVectorFieldRenderer(
+        _pLayerCurrent->id(),
+        _strFieldName,
+        _nClassCount);
+    mpctrlLabelStatus->setText(
+        tr("  已按字段渲染: %1.%2  ")
+            .arg(_pLayerCurrent->name(), _strFieldName));
+}
+
+void MainWindow::onApplyRasterGrayRenderer()
+{
+    QgsMapLayer* _pLayerCurrent = currentSelectedLayer();
+    MapCanvasWidget* _pCanvas = mpMapCanvasManager->activeCanvas();
+    if (_pLayerCurrent == nullptr || _pCanvas == nullptr) {
+        return;
+    }
+    if (qobject_cast<QgsRasterLayer*>(_pLayerCurrent) == nullptr) {
+        QMessageBox::information(this,
+            tr("栅格灰度拉伸"),
+            tr("灰度拉伸仅支持栅格图层。"));
+        return;
+    }
+
+    _pCanvas->applyRasterGrayRenderer(_pLayerCurrent->id());
+    mpctrlLabelStatus->setText(
+        tr("  已应用栅格灰度拉伸: %1  ").arg(_pLayerCurrent->name()));
+}
+
+void MainWindow::onApplyRasterPseudoColorRenderer()
+{
+    QgsMapLayer* _pLayerCurrent = currentSelectedLayer();
+    MapCanvasWidget* _pCanvas = mpMapCanvasManager->activeCanvas();
+    if (_pLayerCurrent == nullptr || _pCanvas == nullptr) {
+        return;
+    }
+    if (qobject_cast<QgsRasterLayer*>(_pLayerCurrent) == nullptr) {
+        QMessageBox::information(this,
+            tr("栅格伪彩色"),
+            tr("伪彩色渲染仅支持栅格图层。"));
+        return;
+    }
+
+    _pCanvas->applyRasterPseudoColorRenderer(_pLayerCurrent->id());
+    mpctrlLabelStatus->setText(
+        tr("  已应用栅格伪彩色: %1  ").arg(_pLayerCurrent->name()));
 }
 
 void MainWindow::onBasicStatisticsRequested()

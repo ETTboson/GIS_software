@@ -286,7 +286,8 @@ LayerInfo DataService::buildLayerInfo(const AnalysisResult& _resultInput) const
     _layerInfo.bVisible = true;
     _layerInfo.bIsAnalysisResult = true;
     _layerInfo.bUseHighlightStyle = _resultInput.strToolId == QStringLiteral("attribute_query")
-        || _resultInput.strToolId == QStringLiteral("spatial_query");
+        || _resultInput.strToolId == QStringLiteral("spatial_query")
+        || _resultInput.strToolId == QStringLiteral("proximity_query");
 
     if (SpatialDatabaseService::parseLayerSourceUri(
             _strSourceUri, _strDatabasePath, _strTableName)) {
