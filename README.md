@@ -63,30 +63,9 @@ cmake --build build --config Debug
 
 如果使用 Ninja + MSVC，请从 Visual Studio Developer Command Prompt、Visual Studio CMake、Qt Creator 或其他已正确加载 MSVC 环境变量的终端中构建，否则可能出现 `type_traits`、`memory` 等标准库头文件找不到的问题。
 
-## Windows 打包
+## AI记忆-ET.md
 
-Release 包通过 `scripts/package_windows.ps1` 生成。脚本会把 `FirstQT.exe`、项目图标、Qt 运行时、QGIS/GDAL/PROJ 运行时资源与必要 DLL 收集到一个可重定位目录，并生成 zip：
-
-```powershell
-cmake --build build_oop_current --config Release
-powershell -ExecutionPolicy Bypass -File scripts/package_windows.ps1 `
-  -Version v1.0.0 `
-  -Configuration Release `
-  -BuildDir build_oop_current `
-  -OSGeo4WRoot D:/OSGeo4W `
-  -Libxml2Root D:/OOP_2026/libxml2
-```
-
-默认输出：
-
-```text
-dist/GeoAI-v1.0.0-win64/
-dist/GeoAI-v1.0.0-win64.zip
-```
-
-解压后双击 `FirstQT.exe` 即可启动。程序启动时会把工作目录切到 exe 同级目录，因此 `resources/icons/` 与 AI 记忆文件 `ET.md` 都应放在 exe 同级目录下。
-
-录制 AI 记忆注入演示时，可在 exe 同级目录创建 `ET.md`：
+可在 exe 同级目录创建 `ET.md`：
 
 ```md
 # GeoAI 演示记忆
