@@ -4,9 +4,6 @@ Dev_manual.md                          # 开发人员本机依赖路径配置说
 rules.txt                              # 项目代码规范、命名规则与分层要求
 .gitignore                             # 本地构建产物、打包产物与大样例数据忽略规则
 
-scripts/
-└── package_windows.ps1                # Windows Release 打包脚本，收集 exe、Qt/QGIS/GDAL/PROJ 运行时与项目图标并生成 zip
-
 resources/
 ├── icons/                             # Ribbon、菜单与 AI 面板使用的图标资源
 └── mainwindow.ui                      # Qt Designer 生成的主窗口 UI 布局文件

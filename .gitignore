@@ -20,6 +20,7 @@ CMakeUserPresets.json
 # Local references and experimental code
 /refs/
 /example_code/
+/scripts/package_windows.ps1
 
 # Local-only demo/output data
 /sample_data/Chengdu/
