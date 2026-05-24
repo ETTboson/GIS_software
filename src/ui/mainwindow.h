@@ -122,6 +122,11 @@ private:
      * @brief 返回图层树中当前选中的图层对象
      */
     QgsMapLayer* currentSelectedLayer() const;
+    /*
+     * @brief 按 QGIS 图层 ID 选中图层树中的图层
+     * @param_1 _strLayerId: 目标图层 ID
+     */
+    void selectLayerById(const QString& _strLayerId);
     DataAssetType resolveAssetChoice(const AnalysisDataAsset& _assetInput);
     void openToolShortcut(const QString& _strToolId);
     bool assetSupportsTool(const AnalysisDataAsset& _assetInput,
@@ -191,9 +196,13 @@ private slots:
      */
     void onApplyFieldRenderer();
     /*
-     * @brief 为图层树当前选中栅格图层应用灰度拉伸
+     * @brief 为图层树当前选中栅格图层应用 2%-98% 百分位灰度拉伸
      */
     void onApplyRasterGrayRenderer();
+    /*
+     * @brief 将图层树当前选中栅格图层恢复为默认灰度渲染
+     */
+    void onApplyRasterDefaultRenderer();
     /*
      * @brief 为图层树当前选中栅格图层应用伪彩色渲染
      */

@@ -17,6 +17,7 @@ endforeach()
 set(OSGEO4W_QT5_ROOT "${OSGEO4W_ROOT}/apps/Qt5")
 set(OSGEO4W_GDAL_ROOT "${OSGEO4W_ROOT}/apps/gdal-dev")
 set(OSGEO4W_QGIS_ROOT "${OSGEO4W_ROOT}/apps/qgis-ltr")
+string(REPLACE "\\" "/" OSGEO4W_ROOT_FOR_CODE "${OSGEO4W_ROOT}")
 set(LOG4CPP_INCLUDE_DIR "${LOG4CPP_ROOT}/include")
 set(LOG4CPP_DEBUG_LIB_DIR "${LOG4CPP_ROOT}/debug")
 set(LOG4CPP_RELEASE_LIB_DIR "${LOG4CPP_ROOT}/release")
@@ -147,6 +148,10 @@ add_executable(FirstQT
 # 如果你的计算机没有支持Windows的全局 UTF-8，该语句是必须的。
 target_compile_options(FirstQT PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/utf-8>
+)
+
+target_compile_definitions(FirstQT PRIVATE
+    OOP_CMAKE_OSGEO4W_ROOT="${OSGEO4W_ROOT_FOR_CODE}"
 )
 
 target_include_directories(FirstQT PRIVATE

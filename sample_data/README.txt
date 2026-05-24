@@ -18,6 +18,15 @@ sample_raster.asc
   - window size = 3
   - center cell original value = 5
 
+sample_line.geojson
+- Type: GeoJSON line vector
+- CRS: WGS84 longitude/latitude coordinates
+- Shape: 1 LineString feature with simple attributes
+- Suggested buffer test:
+  - Open Data -> choose sample_line.geojson
+  - distance = 0.1
+  - segments = 8
+
 sample_spatialite.sqlite
 - Type: SpatiaLite / SQLite spatial database
 - CRS: EPSG:4326

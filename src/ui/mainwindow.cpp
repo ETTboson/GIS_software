@@ -1072,6 +1072,18 @@ QgsMapLayer* MainWindow::currentSelectedLayer() const
     return mpctrlLayerTreeView->currentLayer();
 }
 
+void MainWindow::selectLayerById(const QString& _strLayerId)
+{
+    if (mpctrlLayerTreeView == nullptr || _strLayerId.isEmpty()) {
+        return;
+    }
+
+    QgsMapLayer* _pLayerTarget = QgsProject::instance()->mapLayer(_strLayerId);
+    if (_pLayerTarget != nullptr) {
+        mpctrlLayerTreeView->setCurrentLayer(_pLayerTarget);
+    }
+}
+
 DataAssetType MainWindow::resolveAssetChoice(const AnalysisDataAsset& _assetInput)
 {
     if (!_assetInput.bNeedsUserChoice) {
@@ -1759,7 +1771,8 @@ void MainWindow::onLayerTreeContextMenuRequested(const QPoint& _posMenu)
     _menuLayer.addSeparator();
     QAction* _pActionSimpleSymbol = _menuLayer.addAction(tr("简单符号"));
     QAction* _pActionFieldRenderer = _menuLayer.addAction(tr("字段渲染"));
-    QAction* _pActionRasterGray = _menuLayer.addAction(tr("栅格灰度拉伸"));
+    QAction* _pActionRasterGray = _menuLayer.addAction(tr("栅格灰度拉伸（2%-98%）"));
+    QAction* _pActionRasterDefault = _menuLayer.addAction(tr("恢复栅格默认渲染"));
     QAction* _pActionRasterPseudo = _menuLayer.addAction(tr("栅格伪彩色"));
     _menuLayer.addSeparator();
     QAction* _pActionRemove = _menuLayer.addAction(tr("移除图层"));
@@ -1769,6 +1782,7 @@ void MainWindow::onLayerTreeContextMenuRequested(const QPoint& _posMenu)
     _pActionSimpleSymbol->setEnabled(_bIsVector);
     _pActionFieldRenderer->setEnabled(_bIsVector);
     _pActionRasterGray->setEnabled(_bIsRaster);
+    _pActionRasterDefault->setEnabled(_bIsRaster);
     _pActionRasterPseudo->setEnabled(_bIsRaster);
 
     QAction* _pActionTriggered = _menuLayer.exec(
@@ -1787,6 +1801,10 @@ void MainWindow::onLayerTreeContextMenuRequested(const QPoint& _posMenu)
     }
     if (_pActionTriggered == _pActionRasterGray) {
         onApplyRasterGrayRenderer();
+        return;
+    }
+    if (_pActionTriggered == _pActionRasterDefault) {
+        onApplyRasterDefaultRenderer();
         return;
     }
     if (_pActionTriggered == _pActionRasterPseudo) {
@@ -1965,10 +1983,59 @@ void MainWindow::onApplyRasterGrayRenderer()
             tr("灰度拉伸仅支持栅格图层。"));
         return;
     }
+    if (_pCanvas->isRasterGrayRendererApplied(_pLayerCurrent->id())) {
+        QMessageBox::information(this,
+            tr("栅格灰度拉伸"),
+            tr("当前栅格已经应用过灰度拉伸。"));
+        return;
+    }
 
-    _pCanvas->applyRasterGrayRenderer(_pLayerCurrent->id());
+    const QString _strLayerName = _pLayerCurrent->name();
+    const QString _strNewLayerId =
+        _pCanvas->applyRasterGrayRenderer(_pLayerCurrent->id());
+    if (_strNewLayerId.isEmpty()) {
+        QMessageBox::warning(this,
+            tr("栅格灰度拉伸"),
+            tr("灰度拉伸失败，请确认栅格数据有效后重试。"));
+        return;
+    }
+    selectLayerById(_strNewLayerId);
     mpctrlLabelStatus->setText(
-        tr("  已应用栅格灰度拉伸: %1  ").arg(_pLayerCurrent->name()));
+        tr("  已应用栅格灰度拉伸（2%-98%）: %1  ").arg(_strLayerName));
+}
+
+void MainWindow::onApplyRasterDefaultRenderer()
+{
+    QgsMapLayer* _pLayerCurrent = currentSelectedLayer();
+    MapCanvasWidget* _pCanvas = mpMapCanvasManager->activeCanvas();
+    if (_pLayerCurrent == nullptr || _pCanvas == nullptr) {
+        return;
+    }
+    if (qobject_cast<QgsRasterLayer*>(_pLayerCurrent) == nullptr) {
+        QMessageBox::information(this,
+            tr("恢复栅格默认渲染"),
+            tr("恢复默认渲染仅支持栅格图层。"));
+        return;
+    }
+    if (_pCanvas->isRasterDefaultRendererApplied(_pLayerCurrent->id())) {
+        QMessageBox::information(this,
+            tr("恢复栅格默认渲染"),
+            tr("当前栅格已经是默认渲染。"));
+        return;
+    }
+
+    const QString _strLayerName = _pLayerCurrent->name();
+    const QString _strNewLayerId =
+        _pCanvas->applyRasterDefaultRenderer(_pLayerCurrent->id());
+    if (_strNewLayerId.isEmpty()) {
+        QMessageBox::warning(this,
+            tr("恢复栅格默认渲染"),
+            tr("恢复默认渲染失败，请确认栅格数据有效后重试。"));
+        return;
+    }
+    selectLayerById(_strNewLayerId);
+    mpctrlLabelStatus->setText(
+        tr("  已恢复栅格默认渲染: %1  ").arg(_strLayerName));
 }
 
 void MainWindow::onApplyRasterPseudoColorRenderer()
@@ -1984,10 +2051,25 @@ void MainWindow::onApplyRasterPseudoColorRenderer()
             tr("伪彩色渲染仅支持栅格图层。"));
         return;
     }
+    if (_pCanvas->isRasterPseudoColorRendererApplied(_pLayerCurrent->id())) {
+        QMessageBox::information(this,
+            tr("栅格伪彩色"),
+            tr("当前栅格已经应用过伪彩色渲染。"));
+        return;
+    }
 
-    _pCanvas->applyRasterPseudoColorRenderer(_pLayerCurrent->id());
+    const QString _strLayerName = _pLayerCurrent->name();
+    const QString _strNewLayerId =
+        _pCanvas->applyRasterPseudoColorRenderer(_pLayerCurrent->id());
+    if (_strNewLayerId.isEmpty()) {
+        QMessageBox::warning(this,
+            tr("栅格伪彩色"),
+            tr("伪彩色渲染失败，请确认栅格数据有效后重试。"));
+        return;
+    }
+    selectLayerById(_strNewLayerId);
     mpctrlLabelStatus->setText(
-        tr("  已应用栅格伪彩色: %1  ").arg(_pLayerCurrent->name()));
+        tr("  已应用栅格伪彩色: %1  ").arg(_strLayerName));
 }
 
 void MainWindow::onBasicStatisticsRequested()

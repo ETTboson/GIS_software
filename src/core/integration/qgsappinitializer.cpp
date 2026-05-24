@@ -7,8 +7,19 @@
 #include <QFileInfo>
 #include <QStringList>
 
+#ifndef OOP_CMAKE_OSGEO4W_ROOT
+#define OOP_CMAKE_OSGEO4W_ROOT ""
+#endif
+
 namespace
 {
+struct RuntimeRootResolution
+{
+    QString strRuntimeRoot; // 已选择的运行时根目录
+    QStringList vTriedRoots; // 已检查的候选根目录
+    bool bResolved = false; // 是否找到有效 QGIS 运行时
+};
+
 QString NormalizeNativePath(const QString& _strPath)
 {
     return QDir::toNativeSeparators(QDir::cleanPath(_strPath));
@@ -31,30 +42,52 @@ QString EnvPath(const char* _pszName)
     return QString::fromLocal8Bit(qgetenv(_pszName)).trimmed();
 }
 
-QString ResolveRuntimeRoot(const QString& _strAppDir)
+QString CompileTimeOsgeoRoot()
+{
+    return QString::fromUtf8(OOP_CMAKE_OSGEO4W_ROOT).trimmed();
+}
+
+bool HasQgisRuntime(const QString& _strRuntimeRoot)
+{
+    return DirectoryExists(QDir(_strRuntimeRoot).filePath("apps/qgis-ltr"));
+}
+
+RuntimeRootResolution ResolveRuntimeRoot(const QString& _strAppDir)
 {
     QStringList _vCandidates;
     _vCandidates << _strAppDir;
+
+    const QString _strConfiguredRoot = CompileTimeOsgeoRoot();
+    if (!_strConfiguredRoot.isEmpty()) {
+        _vCandidates << _strConfiguredRoot;
+    }
 
     const QString _strEnvRoot = EnvPath("OSGEO4W_ROOT");
     if (!_strEnvRoot.isEmpty()) {
         _vCandidates << _strEnvRoot;
     }
 
+    RuntimeRootResolution _resolution;
     for (const QString& _strCandidate : _vCandidates) {
         if (_strCandidate.trimmed().isEmpty()) {
             continue;
         }
 
         const QString _strRuntimeRoot = QDir(_strCandidate).absolutePath();
-        const QString _strQgisPrefix =
-            QDir(_strRuntimeRoot).filePath("apps/qgis-ltr");
-        if (DirectoryExists(_strQgisPrefix)) {
-            return _strRuntimeRoot;
+        if (_resolution.vTriedRoots.contains(_strRuntimeRoot)) {
+            continue;
+        }
+
+        _resolution.vTriedRoots << _strRuntimeRoot;
+        if (HasQgisRuntime(_strRuntimeRoot)) {
+            _resolution.strRuntimeRoot = _strRuntimeRoot;
+            _resolution.bResolved = true;
+            return _resolution;
         }
     }
 
-    return QDir(_strAppDir).absolutePath();
+    _resolution.strRuntimeRoot = QDir(_strAppDir).absolutePath();
+    return _resolution;
 }
 
 void SetEnvPath(const char* _pszName, const QString& _strPath)
@@ -109,10 +142,30 @@ QgsAppInitializer::QgsAppInitializer()
     : mbValid(false)
 {
     const QString _strAppDir = QCoreApplication::applicationDirPath();
-    const QString _strRuntimeRoot = ResolveRuntimeRoot(_strAppDir);
+    const RuntimeRootResolution _resolutionRuntime =
+        ResolveRuntimeRoot(_strAppDir);
+    const QString _strRuntimeRoot = _resolutionRuntime.strRuntimeRoot;
     const QDir _dirRuntime(_strRuntimeRoot);
     const QString _strQgisPrefixPath =
         _dirRuntime.filePath("apps/qgis-ltr");
+    const QString _strProjDbPath =
+        _dirRuntime.filePath("share/proj/proj.db");
+    const bool _bHasQgisPrefix = DirectoryExists(_strQgisPrefixPath);
+    const bool _bHasProjDb = QFileInfo(_strProjDbPath).isFile();
+
+    if (!_resolutionRuntime.bResolved) {
+        qWarning() << "[QgsAppInitializer] QGIS runtime root not found. Tried:"
+                   << _resolutionRuntime.vTriedRoots;
+    }
+    if (!_bHasQgisPrefix) {
+        qWarning() << "[QgsAppInitializer] QGIS prefix not found:"
+                   << _strQgisPrefixPath;
+    }
+    if (!_bHasProjDb) {
+        qWarning() << "[QgsAppInitializer] PROJ database not found:"
+                   << _strProjDbPath;
+    }
+
     SetEnvPath("OSGEO4W_ROOT", _strRuntimeRoot);
     qputenv("QGIS_PREFIX_PATH",
         NormalizeForwardPath(_strQgisPrefixPath).toLocal8Bit());
@@ -151,11 +204,8 @@ QgsAppInitializer::QgsAppInitializer()
 
     // 3. 初始化 QGIS 完整运行时（数据提供者、投影库等）
     QgsApplication::initQgis();
-    mbValid = DirectoryExists(_strQgisPrefixPath);
-    if (!mbValid) {
-        qWarning() << "[QgsAppInitializer] QGIS prefix not found:"
-                   << _strQgisPrefixPath;
-    }
+    mbValid = _bHasQgisPrefix && _bHasProjDb;
+    qDebug() << "[QgsAppInitializer] Runtime root:" << _strRuntimeRoot;
 }
 
 // ════════════════════════════════════════════════════════

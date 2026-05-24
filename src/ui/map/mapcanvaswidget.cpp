@@ -19,12 +19,15 @@
 #include <qgsrasterlayer.h>
 #include <qgsrasterdataprovider.h>
 #include <qgsrasterbandstats.h>
+#include <qgsrasterhistogram.h>
 #include <qgsproject.h>
 #include <qgscoordinatereferencesystem.h>
 #include <qgsexception.h>
 #include <qgspointxy.h>
 #include <qgsrectangle.h>
 #include <qgslayertree.h>
+#include <qgslayertreegroup.h>
+#include <qgslayertreelayer.h>
 #include <qgsfield.h>
 #include <qgsfields.h>
 #include <qgsfeature.h>
@@ -84,6 +87,101 @@ QColor rampColor(double _dRatio)
     return QColor(_nRed, _nGreen, _nBlue, 220);
 }
 
+double percentileValueFromHistogram(const QgsRasterHistogram& _histogramBand,
+    double _dPercentile)
+{
+    if (!_histogramBand.valid
+        || _histogramBand.nonNullCount <= 0
+        || _histogramBand.histogramVector.isEmpty()
+        || !qIsFinite(_histogramBand.minimum)
+        || !qIsFinite(_histogramBand.maximum)
+        || _histogramBand.minimum >= _histogramBand.maximum) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    const double _dClampedPercentile = qBound(0.0, _dPercentile, 1.0);
+    const int _nBinCount = _histogramBand.histogramVector.size();
+    const double _dBinWidth =
+        (_histogramBand.maximum - _histogramBand.minimum)
+        / static_cast<double>(_nBinCount);
+    const double _dTargetCount = qBound(
+        1.0,
+        _dClampedPercentile * static_cast<double>(_histogramBand.nonNullCount),
+        static_cast<double>(_histogramBand.nonNullCount));
+
+    long long _lCumulativeCount = 0;
+    for (int _nBinIdx = 0; _nBinIdx < _nBinCount; ++_nBinIdx) {
+        const int _nBinCellCount = _histogramBand.histogramVector.at(_nBinIdx);
+        if (_nBinCellCount <= 0) {
+            continue;
+        }
+
+        const long long _lPreviousCount = _lCumulativeCount;
+        _lCumulativeCount += _nBinCellCount;
+        if (static_cast<double>(_lCumulativeCount) < _dTargetCount) {
+            continue;
+        }
+
+        const double _dBinRatio = qBound(
+            0.0,
+            (_dTargetCount - static_cast<double>(_lPreviousCount))
+                / static_cast<double>(_nBinCellCount),
+            1.0);
+        return _histogramBand.minimum
+            + (static_cast<double>(_nBinIdx) + _dBinRatio) * _dBinWidth;
+    }
+
+    return _histogramBand.maximum;
+}
+
+bool calculatePercentileStretchRange(QgsRasterDataProvider* _pProvider,
+    int _nBand,
+    double _dLowerPercentile,
+    double _dUpperPercentile,
+    double& _dMinimumValue,
+    double& _dMaximumValue)
+{
+    if (_pProvider == nullptr) {
+        return false;
+    }
+
+    const QgsRasterBandStats _statsBand =
+        _pProvider->bandStatistics(_nBand);
+    if (!qIsFinite(_statsBand.minimumValue)
+        || !qIsFinite(_statsBand.maximumValue)
+        || _statsBand.minimumValue >= _statsBand.maximumValue) {
+        return false;
+    }
+
+    const int _nHistogramBinCount = 512;
+    const int _nHistogramSampleSize = 250000;
+    const QgsRasterHistogram _histogramBand =
+        _pProvider->histogram(
+            _nBand,
+            _nHistogramBinCount,
+            _statsBand.minimumValue,
+            _statsBand.maximumValue,
+            QgsRectangle(),
+            _nHistogramSampleSize,
+            false);
+
+    const double _dLowerValue = percentileValueFromHistogram(
+        _histogramBand, _dLowerPercentile);
+    const double _dUpperValue = percentileValueFromHistogram(
+        _histogramBand, _dUpperPercentile);
+    if (!qIsFinite(_dLowerValue)
+        || !qIsFinite(_dUpperValue)
+        || _dLowerValue >= _dUpperValue) {
+        _dMinimumValue = _statsBand.minimumValue;
+        _dMaximumValue = _statsBand.maximumValue;
+        return true;
+    }
+
+    _dMinimumValue = _dLowerValue;
+    _dMaximumValue = _dUpperValue;
+    return true;
+}
+
 } // namespace
 
 
@@ -125,8 +223,8 @@ void MapCanvasWidget::initCanvas()
 
     // 开启动态投影（on-the-fly CRS transformation）
     mpCanvas->setCachingEnabled(true);
-    mpCanvas->setParallelRenderingEnabled(true);
-    mpCanvas->setPreviewJobsEnabled(true);
+    mpCanvas->setParallelRenderingEnabled(false);
+    mpCanvas->setPreviewJobsEnabled(false);
     mpCanvas->setMapUpdateInterval(250);
 
     // ── 布局：让画布填满整个 Widget ──────────────────
@@ -256,6 +354,9 @@ void MapCanvasWidget::loadLayer(const LayerInfo& _layerInfo)
 
     // ── 加入本画布图层列表（新图层放在最上层）────────
     mpvLayers.prepend(_pLayer);
+    if (qobject_cast<QgsRasterLayer*>(_pLayer) != nullptr) {
+        mmapRasterRenderModes.insert(_pLayer->id(), RasterRenderMode::DefaultRenderer);
+    }
     refreshCanvasLayers();
 
     // 首次加载时缩放至该图层范围
@@ -279,6 +380,7 @@ void MapCanvasWidget::removeLayer(const QString& _strLayerId)
         if (mpvLayers[_nFilesIdx]->id() == _strLayerId)
         {
             mpvLayers.removeAt(_nFilesIdx);
+            mmapRasterRenderModes.remove(_strLayerId);
             QgsProject::instance()->removeMapLayer(_strLayerId);
             refreshCanvasLayers();
             mpCanvas->refresh();
@@ -564,51 +666,108 @@ void MapCanvasWidget::applyVectorFieldRenderer(const QString& _strLayerId,
     mpCanvas->refresh();
 }
 
-void MapCanvasWidget::applyRasterGrayRenderer(const QString& _strLayerId)
+QString MapCanvasWidget::applyRasterGrayRenderer(const QString& _strLayerId)
 {
-    QgsRasterLayer* _pRasterLayer =
-        qobject_cast<QgsRasterLayer*>(findLayerById(_strLayerId));
-    if (_pRasterLayer == nullptr || _pRasterLayer->dataProvider() == nullptr) {
-        qWarning() << "[MapCanvasWidget] applyRasterGrayRenderer: raster layer not found:"
-                   << _strLayerId;
-        return;
-    }
-
-    const int _nBand = 1;
-    const QgsRasterBandStats _statsBand =
-        _pRasterLayer->dataProvider()->bandStatistics(_nBand);
-    QgsSingleBandGrayRenderer* _pRenderer =
-        new QgsSingleBandGrayRenderer(_pRasterLayer->dataProvider(), _nBand);
-    QgsContrastEnhancement* _pContrast = new QgsContrastEnhancement(
-        _pRasterLayer->dataProvider()->dataType(_nBand));
-    _pContrast->setMinimumValue(_statsBand.minimumValue);
-    _pContrast->setMaximumValue(_statsBand.maximumValue);
-    _pContrast->setContrastEnhancementAlgorithm(
-        QgsContrastEnhancement::StretchToMinimumMaximum);
-    _pRenderer->setContrastEnhancement(_pContrast);
-
-    _pRasterLayer->setRenderer(_pRenderer);
-    _pRasterLayer->triggerRepaint();
-    mpCanvas->refresh();
+    return applyRasterRendererWhenIdle(_strLayerId, RasterRenderMode::GrayStretch);
 }
 
-void MapCanvasWidget::applyRasterPseudoColorRenderer(const QString& _strLayerId)
+QString MapCanvasWidget::applyRasterDefaultRenderer(const QString& _strLayerId)
 {
-    QgsRasterLayer* _pRasterLayer =
-        qobject_cast<QgsRasterLayer*>(findLayerById(_strLayerId));
-    if (_pRasterLayer == nullptr || _pRasterLayer->dataProvider() == nullptr) {
-        qWarning() << "[MapCanvasWidget] applyRasterPseudoColorRenderer: raster layer not found:"
-                   << _strLayerId;
-        return;
+    return applyRasterRendererWhenIdle(_strLayerId, RasterRenderMode::DefaultRenderer);
+}
+
+QString MapCanvasWidget::applyRasterPseudoColorRenderer(const QString& _strLayerId)
+{
+    return applyRasterRendererWhenIdle(_strLayerId, RasterRenderMode::PseudoColor);
+}
+
+bool MapCanvasWidget::isRasterGrayRendererApplied(const QString& _strLayerId) const
+{
+    return isRasterRenderModeApplied(_strLayerId, RasterRenderMode::GrayStretch);
+}
+
+bool MapCanvasWidget::isRasterDefaultRendererApplied(const QString& _strLayerId) const
+{
+    return isRasterRenderModeApplied(_strLayerId, RasterRenderMode::DefaultRenderer);
+}
+
+bool MapCanvasWidget::isRasterPseudoColorRendererApplied(const QString& _strLayerId) const
+{
+    return isRasterRenderModeApplied(_strLayerId, RasterRenderMode::PseudoColor);
+}
+
+QString MapCanvasWidget::applyRasterRendererWhenIdle(const QString& _strLayerId,
+    RasterRenderMode _eMode)
+{
+    if (mpCanvas != nullptr && mpCanvas->isDrawing()) {
+        return QString();
+    }
+
+    return runRasterRendererOperation(_strLayerId, _eMode);
+}
+
+bool MapCanvasWidget::configureRasterRenderer(QgsRasterLayer* _pRasterLayer,
+    RasterRenderMode _eMode)
+{
+    QgsRasterDataProvider* _pProvider =
+        _pRasterLayer != nullptr ? _pRasterLayer->dataProvider() : nullptr;
+    if (_pRasterLayer == nullptr || _pProvider == nullptr) {
+        return false;
     }
 
     const int _nBand = 1;
+    if (_eMode == RasterRenderMode::DefaultRenderer) {
+        _pRasterLayer->setDefaultContrastEnhancement();
+        return true;
+    }
+
+    if (_eMode == RasterRenderMode::GrayStretch) {
+        double _dMinimumValue = 0.0;
+        double _dMaximumValue = 0.0;
+        if (!calculatePercentileStretchRange(
+                _pProvider,
+                _nBand,
+                0.02,
+                0.98,
+                _dMinimumValue,
+                _dMaximumValue)
+            || !qIsFinite(_dMinimumValue)
+            || !qIsFinite(_dMaximumValue)
+            || _dMinimumValue >= _dMaximumValue) {
+            qWarning() << "[MapCanvasWidget] configureRasterRenderer: invalid stretch range:"
+                       << _pRasterLayer->id();
+            return false;
+        }
+
+        QgsSingleBandGrayRenderer* _pRenderer =
+            new QgsSingleBandGrayRenderer(nullptr, _nBand);
+        QgsContrastEnhancement* _pContrast = new QgsContrastEnhancement(
+            _pProvider->dataType(_nBand));
+        _pContrast->setMinimumValue(_dMinimumValue);
+        _pContrast->setMaximumValue(_dMaximumValue);
+        _pContrast->setContrastEnhancementAlgorithm(
+            QgsContrastEnhancement::StretchToMinimumMaximum);
+        _pRenderer->setContrastEnhancement(_pContrast);
+
+        _pRasterLayer->setRenderer(_pRenderer);
+        return true;
+    }
+
     const QgsRasterBandStats _statsBand =
-        _pRasterLayer->dataProvider()->bandStatistics(_nBand);
+        _pProvider->bandStatistics(_nBand);
     const double _dMinimumValue = _statsBand.minimumValue;
     const double _dMaximumValue = _statsBand.maximumValue;
-    const double _dMiddleValue = (_dMinimumValue + _dMaximumValue) * 0.5;
+    if (!qIsFinite(_dMinimumValue)
+        || !qIsFinite(_dMaximumValue)
+        || _dMinimumValue >= _dMaximumValue) {
+        qWarning() << "[MapCanvasWidget] configureRasterRenderer: invalid value range:"
+                   << _pRasterLayer->id()
+                   << _dMinimumValue
+                   << _dMaximumValue;
+        return false;
+    }
 
+    const double _dMiddleValue = (_dMinimumValue + _dMaximumValue) * 0.5;
     QList<QgsColorRampShader::ColorRampItem> _vItems;
     _vItems << QgsColorRampShader::ColorRampItem(
         _dMinimumValue, QColor("#2B6CB0"), tr("低值"));
@@ -631,15 +790,119 @@ void MapCanvasWidget::applyRasterPseudoColorRenderer(const QString& _strLayerId)
 
     QgsSingleBandPseudoColorRenderer* _pRenderer =
         new QgsSingleBandPseudoColorRenderer(
-            _pRasterLayer->dataProvider(),
+            nullptr,
             _nBand,
             _pShader);
     _pRenderer->setClassificationMin(_dMinimumValue);
     _pRenderer->setClassificationMax(_dMaximumValue);
 
     _pRasterLayer->setRenderer(_pRenderer);
-    _pRasterLayer->triggerRepaint();
-    mpCanvas->refresh();
+    return true;
+}
+
+bool MapCanvasWidget::isRasterRenderModeApplied(const QString& _strLayerId,
+    RasterRenderMode _eMode) const
+{
+    if (qobject_cast<QgsRasterLayer*>(findLayerById(_strLayerId)) == nullptr) {
+        return false;
+    }
+
+    return mmapRasterRenderModes.value(
+        _strLayerId,
+        RasterRenderMode::DefaultRenderer) == _eMode;
+}
+
+QString MapCanvasWidget::runRasterRendererOperation(const QString& _strLayerId,
+    RasterRenderMode _eMode)
+{
+    QgsRasterLayer* _pRasterLayer =
+        qobject_cast<QgsRasterLayer*>(findLayerById(_strLayerId));
+    if (_pRasterLayer == nullptr || _pRasterLayer->dataProvider() == nullptr) {
+        qWarning() << "[MapCanvasWidget] runRasterRendererOperation: raster layer not found:"
+                   << _strLayerId;
+        return QString();
+    }
+    if (isRasterRenderModeApplied(_strLayerId, _eMode)) {
+        return _strLayerId;
+    }
+
+    int _nLayerIndex = -1;
+    for (int _nIndex = 0; _nIndex < mpvLayers.size(); ++_nIndex) {
+        if (mpvLayers.at(_nIndex) == _pRasterLayer) {
+            _nLayerIndex = _nIndex;
+            break;
+        }
+    }
+    if (_nLayerIndex < 0) {
+        return QString();
+    }
+
+    const QString _strSourceUri = _pRasterLayer->source();
+    const QString _strLayerName = _pRasterLayer->name();
+    QgsLayerTreeGroup* _pRoot = QgsProject::instance()->layerTreeRoot();
+    QgsLayerTreeLayer* _pOldTreeLayer =
+        _pRoot != nullptr ? _pRoot->findLayer(_strLayerId) : nullptr;
+    QgsLayerTreeGroup* _pParentGroup =
+        _pOldTreeLayer != nullptr
+            ? qobject_cast<QgsLayerTreeGroup*>(_pOldTreeLayer->parent())
+            : _pRoot;
+    if (_pParentGroup == nullptr) {
+        _pParentGroup = _pRoot;
+    }
+    const bool _bLayerVisible =
+        _pOldTreeLayer == nullptr || _pOldTreeLayer->itemVisibilityChecked();
+    int _nTreeIndex = 0;
+    if (_pOldTreeLayer != nullptr && _pParentGroup != nullptr) {
+        _nTreeIndex = _pParentGroup->children().indexOf(_pOldTreeLayer);
+        if (_nTreeIndex < 0) {
+            _nTreeIndex = 0;
+        }
+    }
+
+    QgsRasterLayer* _pNewRasterLayer =
+        new QgsRasterLayer(_strSourceUri, _strLayerName);
+    if (!_pNewRasterLayer->isValid()) {
+        delete _pNewRasterLayer;
+        return QString();
+    }
+    if (!configureRasterRenderer(_pNewRasterLayer, _eMode)) {
+        delete _pNewRasterLayer;
+        return QString();
+    }
+
+    QgsProject::instance()->addMapLayer(_pNewRasterLayer, false);
+    QgsLayerTreeLayer* _pNewTreeLayer = nullptr;
+    if (_pParentGroup != nullptr) {
+        _pNewTreeLayer = _pParentGroup->insertLayer(_nTreeIndex, _pNewRasterLayer);
+        if (_pNewTreeLayer != nullptr) {
+            _pNewTreeLayer->setItemVisibilityChecked(_bLayerVisible);
+        }
+    }
+
+    mpCanvas->freeze(true);
+    mpvLayers[_nLayerIndex] = _pNewRasterLayer;
+    refreshCanvasLayers();
+    mpCanvas->freeze(false);
+
+    QgsMapLayer* _pRetiredLayer =
+        QgsProject::instance()->takeMapLayer(_pRasterLayer);
+    QgsLayerTreeLayer* _pStaleTreeLayer =
+        _pRoot != nullptr ? _pRoot->findLayer(_strLayerId) : nullptr;
+    if (_pStaleTreeLayer != nullptr && _pStaleTreeLayer->parent() != nullptr) {
+        QgsLayerTreeGroup* _pStaleParent =
+            qobject_cast<QgsLayerTreeGroup*>(_pStaleTreeLayer->parent());
+        if (_pStaleParent != nullptr) {
+            _pStaleParent->removeChildNode(_pStaleTreeLayer);
+        }
+    }
+    if (_pRetiredLayer != nullptr) {
+        mpvRetiredRasterLayers.append(_pRetiredLayer);
+    }
+
+    mmapRasterRenderModes.remove(_strLayerId);
+    mmapRasterRenderModes.insert(_pNewRasterLayer->id(), _eMode);
+    mpCanvas->redrawAllLayers();
+    return _pNewRasterLayer->id();
 }
 
 void MapCanvasWidget::applyHighlightStyle(QgsVectorLayer* _pLayerInput)

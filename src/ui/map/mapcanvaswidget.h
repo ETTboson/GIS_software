@@ -3,6 +3,7 @@
 
 #include <QWidget>
 #include <QList>
+#include <QMap>
 #include <QString>
 #include <QStringList>
 #include <qgspointxy.h>
@@ -141,16 +142,40 @@ public slots:
         int _nClassCount);
 
     /*
-     * @brief 为单波段栅格应用灰度拉伸
+     * @brief 为单波段栅格应用 2%-98% 百分位灰度拉伸
      * @param_1 _strLayerId: 目标图层的 QGIS 图层 ID
      */
-    void applyRasterGrayRenderer(const QString& _strLayerId);
+    QString applyRasterGrayRenderer(const QString& _strLayerId);
+
+    /*
+     * @brief 将单波段栅格恢复为默认灰度渲染
+     * @param_1 _strLayerId: 目标图层的 QGIS 图层 ID
+     */
+    QString applyRasterDefaultRenderer(const QString& _strLayerId);
 
     /*
      * @brief 为单波段栅格应用伪彩色渲染
      * @param_1 _strLayerId: 目标图层的 QGIS 图层 ID
      */
-    void applyRasterPseudoColorRenderer(const QString& _strLayerId);
+    QString applyRasterPseudoColorRenderer(const QString& _strLayerId);
+
+    /*
+     * @brief 判断目标栅格图层是否已经处于 2%-98% 百分位灰度拉伸状态
+     * @param_1 _strLayerId: 目标图层的 QGIS 图层 ID
+     */
+    bool isRasterGrayRendererApplied(const QString& _strLayerId) const;
+
+    /*
+     * @brief 判断目标栅格图层是否已经处于默认灰度渲染状态
+     * @param_1 _strLayerId: 目标图层的 QGIS 图层 ID
+     */
+    bool isRasterDefaultRendererApplied(const QString& _strLayerId) const;
+
+    /*
+     * @brief 判断目标栅格图层是否已经处于伪彩色渲染状态
+     * @param_1 _strLayerId: 目标图层的 QGIS 图层 ID
+     */
+    bool isRasterPseudoColorRendererApplied(const QString& _strLayerId) const;
 
 private slots:
     /*
@@ -166,6 +191,13 @@ private slots:
     void onScaleChanged(double _dScale);
 
 private:
+    enum class RasterRenderMode
+    {
+        GrayStretch,
+        DefaultRenderer,
+        PseudoColor
+    };
+
     /*
      * @brief 内部初始化：创建 QgsMapCanvas、设置 CRS、布局、地图工具
      */
@@ -175,6 +207,34 @@ private:
      * @brief 根据当前 mpvLayers 重新设置画布图层列表并刷新
      */
     void refreshCanvasLayers();
+
+    /*
+     * @brief 若画布空闲则执行栅格渲染切换
+     */
+    QString applyRasterRendererWhenIdle(const QString& _strLayerId,
+        RasterRenderMode _eMode);
+
+    /*
+     * @brief 立即执行一次栅格渲染切换
+     */
+    QString runRasterRendererOperation(const QString& _strLayerId,
+        RasterRenderMode _eMode);
+
+    /*
+     * @brief 在新建的栅格图层上设置目标渲染模式
+     * @param_1 _pRasterLayer: 新建栅格图层
+     * @param_2 _eMode: 目标渲染模式
+     */
+    bool configureRasterRenderer(QgsRasterLayer* _pRasterLayer,
+        RasterRenderMode _eMode);
+
+    /*
+     * @brief 判断目标栅格图层是否已经处于指定渲染模式
+     * @param_1 _strLayerId: 目标图层 ID
+     * @param_2 _eMode: 渲染模式
+     */
+    bool isRasterRenderModeApplied(const QString& _strLayerId,
+        RasterRenderMode _eMode) const;
 
     /*
      * @brief 为查询结果矢量图层应用高亮样式
@@ -222,6 +282,8 @@ private:
 
     // ── 图层管理 ──────────────────────────────────────
     QList<QgsMapLayer*> mpvLayers;  // 当前画布持有的图层列表（有序，首项在最上层）
+    QList<QgsMapLayer*> mpvRetiredRasterLayers; // 已从工程移出但暂不析构的旧栅格图层
+    QMap<QString, RasterRenderMode> mmapRasterRenderModes; // 栅格图层当前渲染模式
 };
 
 #endif // MAPCANVASWIDGET_H_A1B2C3D4E5F6
