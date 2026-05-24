@@ -18,6 +18,9 @@ int main(int argc, char* argv[])
 
     // RAII：构造时初始化 QGIS，析构时自动 exitQgis()
     QgsAppInitializer _qgsInitializer;
+    if (!_qgsInitializer.isValid()) {
+        return 1;
+    }
 
     AntDesignTheme::Install(&app);
 

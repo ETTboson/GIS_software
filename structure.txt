@@ -11,6 +11,7 @@ resources/
 sample_data/
 ├── sample_table.csv                   # CSV 数值测试数据，适合验证统计分析
 ├── sample_raster.asc                  # 简单栅格测试数据，适合验证邻域分析
+├── sample_line.geojson                # 简单线矢量测试数据，适合验证缓冲区分析
 ├── sample_spatialite.sqlite           # SpatiaLite 空间数据库测试数据，包含点/面空间表
 ├── create_sample_spatialite.sql       # 生成 sample_spatialite.sqlite 的 sqlite3 脚本
 └── README.txt                         # 测试数据说明与预期结果
@@ -50,7 +51,7 @@ src/
 │   ├── workflow/
 │   │   └── analysisworkflowcoordinator.h/cpp # 分析工作流状态机，负责基础统计/频率统计/邻域/缓冲/叠加/属性查询/空间查询/邻近查询补参与操作识别
 │   ├── integration/
-│   │   └── qgsappinitializer.h/cpp    # QGIS 应用初始化/释放管理，并按 exe 同级目录推导可重定位运行时路径
+│   │   └── qgsappinitializer.h/cpp    # QGIS 应用初始化/释放管理，按打包目录、CMake 配置与环境变量推导运行时路径
 │   └── interfaces/
 │       └── iaitoolhost.h              # AI 宿主桥接接口，向 AI 暴露分析上下文与分析执行能力
 │
