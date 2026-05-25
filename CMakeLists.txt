@@ -151,7 +151,14 @@ target_compile_options(FirstQT PRIVATE
 )
 
 target_compile_definitions(FirstQT PRIVATE
-    OOP_CMAKE_OSGEO4W_ROOT="${OSGEO4W_ROOT_FOR_CODE}"
+    $<$<CONFIG:Debug>:OOP_BUILD_DEBUG=1>
+    $<$<CONFIG:Debug>:OOP_ENABLE_DEV_RUNTIME_ROOT=1>
+    $<$<CONFIG:Debug>:OOP_CMAKE_OSGEO4W_ROOT="${OSGEO4W_ROOT_FOR_CODE}">
+    $<$<CONFIG:Release>:OOP_BUILD_RELEASE=1>
+)
+
+set_target_properties(FirstQT PROPERTIES
+    WIN32_EXECUTABLE "$<CONFIG:Release>"
 )
 
 target_include_directories(FirstQT PRIVATE

@@ -57,10 +57,12 @@ RuntimeRootResolution ResolveRuntimeRoot(const QString& _strAppDir)
     QStringList _vCandidates;
     _vCandidates << _strAppDir;
 
+#if defined(OOP_ENABLE_DEV_RUNTIME_ROOT)
     const QString _strConfiguredRoot = CompileTimeOsgeoRoot();
     if (!_strConfiguredRoot.isEmpty()) {
         _vCandidates << _strConfiguredRoot;
     }
+#endif
 
     const QString _strEnvRoot = EnvPath("OSGEO4W_ROOT");
     if (!_strEnvRoot.isEmpty()) {
