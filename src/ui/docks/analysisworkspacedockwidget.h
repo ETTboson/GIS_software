@@ -2,6 +2,7 @@
 #define ANALYSISWORKSPACEDOCKWIDGET_H_C9D0E1F2A3B4
 
 #include <QDockWidget>
+#include <QPoint>
 
 #include "model/dto/analysisdataasset.h"
 #include "model/dto/analysisresult.h"
@@ -118,6 +119,12 @@ public:
      */
     void setVisualizationDetailText(const QString& _strDetailText);
 
+    /*
+     * @brief 只更新 Data 页顶部提示文本，不切换当前页签
+     * @param_1 _strHint: 新的提示文本
+     */
+    void setDataHint(const QString& _strHint);
+
 signals:
     /*
      * @brief 用户请求执行基础统计
@@ -169,9 +176,16 @@ signals:
         const QString& _strOperatorId,
         const QString& _strValueText);
 
+    /*
+     * @brief 用户请求删除指定分析资产记录
+     * @param_1 _strAssetId: 目标分析资产 ID
+     */
+    void analysisAssetDeleteRequested(const QString& _strAssetId);
+
 private slots:
     void onAssetListCurrentItemChanged(QListWidgetItem* _pCurrent,
         QListWidgetItem* _pPrevious);
+    void onAssetListContextMenuRequested(const QPoint& _posMenu);
     void onCurrentAssetChanged(const AnalysisDataAsset& _assetCurrent);
     void onCurrentAssetCleared();
     void onHistoryItemCurrentRowChanged(int _nCurrentRow);

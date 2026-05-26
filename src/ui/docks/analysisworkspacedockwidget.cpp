@@ -3,6 +3,7 @@
 #include "service/data/datarepository.h"
 #include "ui/components/antbutton.h"
 
+#include <QAction>
 #include <QComboBox>
 #include <QDoubleSpinBox>
 #include <QFormLayout>
@@ -12,6 +13,7 @@
 #include <QLayoutItem>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QMenu>
 #include <QSignalBlocker>
 #include <QSpinBox>
 #include <QSplitter>
@@ -77,6 +79,7 @@ AnalysisWorkspaceDockWidget::AnalysisWorkspaceDockWidget(QWidget* _pParent)
     mpctrlTabWidget->addTab(mpctrlPageResults, tr("Results"));
 
     mpctrlLabelDataHint->setWordWrap(true);
+    mpctrlAssetList->setContextMenuPolicy(Qt::CustomContextMenu);
     mpctrlAssetSummaryView->setReadOnly(true);
     mpctrlAssetSummaryView->setPlaceholderText(tr("数据资产摘要将在这里显示。"));
 
@@ -280,6 +283,8 @@ AnalysisWorkspaceDockWidget::AnalysisWorkspaceDockWidget(QWidget* _pParent)
 
     connect(mpctrlAssetList, &QListWidget::currentItemChanged,
         this, &AnalysisWorkspaceDockWidget::onAssetListCurrentItemChanged);
+    connect(mpctrlAssetList, &QWidget::customContextMenuRequested,
+        this, &AnalysisWorkspaceDockWidget::onAssetListContextMenuRequested);
     connect(mpctrlComboToolSelector,
         QOverload<int>::of(&QComboBox::currentIndexChanged),
         this, &AnalysisWorkspaceDockWidget::onToolSelectorCurrentIndexChanged);
@@ -489,16 +494,47 @@ void AnalysisWorkspaceDockWidget::setVisualizationDetailText(
     mpctrlVisualizationDetailView->setPlainText(_strDetailText);
 }
 
+void AnalysisWorkspaceDockWidget::setDataHint(const QString& _strHint)
+{
+    mpctrlLabelDataHint->setText(_strHint);
+}
+
 void AnalysisWorkspaceDockWidget::onAssetListCurrentItemChanged(
     QListWidgetItem* _pCurrent,
     QListWidgetItem* _pPrevious)
 {
     Q_UNUSED(_pPrevious)
+    const QString _strAssetId = (_pCurrent == nullptr)
+        ? QString()
+        : _pCurrent->data(Qt::UserRole).toString().trimmed();
+
     if (mpDataRepository == nullptr || _pCurrent == nullptr) {
         return;
     }
 
-    mpDataRepository->selectAssetById(_pCurrent->data(Qt::UserRole).toString());
+    mpDataRepository->selectAssetById(_strAssetId);
+}
+
+void AnalysisWorkspaceDockWidget::onAssetListContextMenuRequested(
+    const QPoint& _posMenu)
+{
+    QListWidgetItem* _pItem = mpctrlAssetList->itemAt(_posMenu);
+    if (_pItem == nullptr) {
+        return;
+    }
+
+    const QString _strAssetId = _pItem->data(Qt::UserRole).toString().trimmed();
+    if (_strAssetId.isEmpty()) {
+        return;
+    }
+
+    QMenu _menuAsset(mpctrlAssetList);
+    QAction* _pActionDelete = _menuAsset.addAction(tr("删除数据资产"));
+    QAction* _pActionTriggered = _menuAsset.exec(
+        mpctrlAssetList->viewport()->mapToGlobal(_posMenu));
+    if (_pActionTriggered == _pActionDelete) {
+        emit analysisAssetDeleteRequested(_strAssetId);
+    }
 }
 
 void AnalysisWorkspaceDockWidget::onCurrentAssetChanged(
@@ -559,6 +595,10 @@ void AnalysisWorkspaceDockWidget::refreshAssetList()
         return;
     }
 
+    const QString _strCurrentAssetId = mpDataRepository->hasCurrentAsset()
+        ? mpDataRepository->currentAsset().strAssetId
+        : QString();
+    QListWidgetItem* _pCurrentItem = nullptr;
     const QList<AnalysisDataAsset> _vAssets = mpDataRepository->getAssets();
     for (const AnalysisDataAsset& _assetCurrent : _vAssets) {
         QListWidgetItem* _pItem = new QListWidgetItem(
@@ -570,6 +610,13 @@ void AnalysisWorkspaceDockWidget::refreshAssetList()
             mpctrlAssetList);
         _pItem->setData(Qt::UserRole, _assetCurrent.strAssetId);
         _pItem->setToolTip(_assetCurrent.strSummary);
+        if (_assetCurrent.strAssetId == _strCurrentAssetId) {
+            _pCurrentItem = _pItem;
+        }
+    }
+
+    if (_pCurrentItem != nullptr) {
+        mpctrlAssetList->setCurrentItem(_pCurrentItem);
     }
 }
 

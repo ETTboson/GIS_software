@@ -59,7 +59,7 @@
   <action name="actionToggleAIPanel">
    <property name="text"><string>AI面板</string></property>
    <property name="checkable"><bool>true</bool></property>
-   <property name="checked"><bool>true</bool></property>
+   <property name="checked"><bool>false</bool></property>
   </action>
   <action name="actionToggleAttrPanel">
    <property name="text"><string>属性表</string></property>

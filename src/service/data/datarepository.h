@@ -41,6 +41,12 @@ public:
     void clearAssets();
 
     /*
+     * @brief 按资产 ID 删除一个分析资产，并保持当前选择稳定
+     * @param_1 _strAssetId: 目标资产 ID
+     */
+    bool removeAssetById(const QString& _strAssetId);
+
+    /*
      * @brief 返回当前全部资产列表
      */
     QList<AnalysisDataAsset> getAssets() const;

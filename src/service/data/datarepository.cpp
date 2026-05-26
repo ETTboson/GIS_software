@@ -46,6 +46,52 @@ void DataRepository::clearAssets()
     emit currentAssetCleared();
 }
 
+bool DataRepository::removeAssetById(const QString& _strAssetId)
+{
+    const QString _strTargetAssetId = _strAssetId.trimmed();
+    if (_strTargetAssetId.isEmpty()) {
+        return false;
+    }
+
+    for (int _nAssetIdx = 0; _nAssetIdx < mvAssets.size(); ++_nAssetIdx) {
+        if (mvAssets[_nAssetIdx].strAssetId != _strTargetAssetId) {
+            continue;
+        }
+
+        const bool _bRemovingCurrent =
+            (mstrCurrentAssetId == _strTargetAssetId);
+        mvAssets.removeAt(_nAssetIdx);
+
+        AnalysisDataAsset _assetNextCurrent;
+        bool _bHasNextCurrent = false;
+        if (_bRemovingCurrent) {
+            if (mvAssets.isEmpty()) {
+                mstrCurrentAssetId.clear();
+            } else {
+                int _nNextAssetIdx = _nAssetIdx;
+                if (_nNextAssetIdx >= mvAssets.size()) {
+                    _nNextAssetIdx = mvAssets.size() - 1;
+                }
+                _assetNextCurrent = mvAssets.at(_nNextAssetIdx);
+                mstrCurrentAssetId = _assetNextCurrent.strAssetId;
+                _bHasNextCurrent = true;
+            }
+        }
+
+        emit assetListChanged();
+        if (_bRemovingCurrent) {
+            if (_bHasNextCurrent) {
+                emit currentAssetChanged(_assetNextCurrent);
+            } else {
+                emit currentAssetCleared();
+            }
+        }
+        return true;
+    }
+
+    return false;
+}
+
 QList<AnalysisDataAsset> DataRepository::getAssets() const
 {
     return mvAssets;

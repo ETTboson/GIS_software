@@ -7,6 +7,7 @@
 #include "service/analysis/statisticalanalysisservice.h"
 #include "service/data/datarepository.h"
 #include "service/data/dataservice.h"
+#include "service/data/spatialdatabaseservice.h"
 #include "ui/components/imagebutton.h"
 #include "ui/docks/aidockwidget.h"
 #include "ui/docks/analysisworkspacedockwidget.h"
@@ -299,6 +300,86 @@ QString capabilityText(AnalysisCapabilities _flagsCapabilities)
         _vCaps << QObject::tr("属性查询");
     }
     return _vCaps.isEmpty() ? QObject::tr("无") : _vCaps.join(", ");
+}
+
+QString normalizedLayerSourceKey(const QString& _strSource)
+{
+    QString _strSourceText = _strSource.trimmed();
+    if (_strSourceText.isEmpty()) {
+        return QString();
+    }
+
+    QString _strDatabasePath;
+    QString _strTableName;
+    if (SpatialDatabaseService::parseLayerSourceUri(
+            _strSourceText, _strDatabasePath, _strTableName)) {
+        return QStringLiteral("%1|layername=%2")
+            .arg(QFileInfo(_strDatabasePath).absoluteFilePath().toLower(),
+                _strTableName.trimmed().toLower());
+    }
+
+    const int _nProviderOptionPos = _strSourceText.indexOf('|');
+    if (_nProviderOptionPos >= 0) {
+        _strSourceText = _strSourceText.left(_nProviderOptionPos);
+    }
+    return QFileInfo(_strSourceText).absoluteFilePath().toLower();
+}
+
+bool stringListContainsExact(const QStringList& _vstrValues,
+    const QString& _strNeedle)
+{
+    for (const QString& _strValue : _vstrValues) {
+        if (_strValue == _strNeedle) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void appendUniqueLayerSourceKey(QStringList& _vstrKeys,
+    const QString& _strSource)
+{
+    const QString _strKey = normalizedLayerSourceKey(_strSource);
+    if (!_strKey.isEmpty() && !stringListContainsExact(_vstrKeys, _strKey)) {
+        _vstrKeys.append(_strKey);
+    }
+}
+
+QStringList sourceKeysForAsset(const AnalysisDataAsset& _assetInput)
+{
+    QStringList _vstrKeys;
+    appendUniqueLayerSourceKey(_vstrKeys, _assetInput.strSourcePath);
+    appendUniqueLayerSourceKey(_vstrKeys, _assetInput.dataVector.strSourceUri);
+    if (!_assetInput.dataVector.strDatabasePath.trimmed().isEmpty()
+        && !_assetInput.dataVector.strTableName.trimmed().isEmpty()) {
+        appendUniqueLayerSourceKey(_vstrKeys,
+            SpatialDatabaseService::buildLayerSourceUri(
+                _assetInput.dataVector.strDatabasePath,
+                _assetInput.dataVector.strTableName));
+    }
+    return _vstrKeys;
+}
+
+QStringList sourceKeysForLayer(QgsMapLayer* _pLayerInput)
+{
+    QStringList _vstrKeys;
+    if (_pLayerInput == nullptr) {
+        return _vstrKeys;
+    }
+
+    appendUniqueLayerSourceKey(_vstrKeys, _pLayerInput->source());
+    return _vstrKeys;
+}
+
+bool sourceKeyListsIntersect(const QStringList& _vstrLeft,
+    const QStringList& _vstrRight)
+{
+    for (const QString& _strLeftKey : _vstrLeft) {
+        if (stringListContainsExact(_vstrRight, _strLeftKey)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 QJsonObject buildAssetContextObject(const AnalysisDataAsset& _assetInput)
@@ -821,7 +902,11 @@ void MainWindow::createAIDock()
     mpctrlDockAI = new AIDockWidget(this);
     mpctrlDockAI->setAIManager(mpAIManager);
     addDockWidget(Qt::RightDockWidgetArea, mpctrlDockAI);
-    mpctrlDockAI->setVisible(true);
+    mpctrlDockAI->setVisible(false);
+    {
+        QSignalBlocker _blocker(mpUI->actionToggleAIPanel);
+        mpUI->actionToggleAIPanel->setChecked(false);
+    }
 
     connect(mpUI->actionToggleAIPanel, &QAction::toggled,
         mpctrlDockAI, &QDockWidget::setVisible);
@@ -1008,6 +1093,9 @@ void MainWindow::initConnections()
     connect(mpctrlDockAnalysisWorkspace,
         &AnalysisWorkspaceDockWidget::attributeQueryRequested,
         this, &MainWindow::onAttributeQueryRequested);
+    connect(mpctrlDockAnalysisWorkspace,
+        &AnalysisWorkspaceDockWidget::analysisAssetDeleteRequested,
+        this, &MainWindow::onAnalysisAssetDeleteRequested);
 
     connect(mpMapCanvasManager, &MapCanvasManager::activeCanvasChanged,
         this, &MainWindow::onActiveCanvasChanged);
@@ -1082,6 +1170,174 @@ void MainWindow::selectLayerById(const QString& _strLayerId)
     if (_pLayerTarget != nullptr) {
         mpctrlLayerTreeView->setCurrentLayer(_pLayerTarget);
     }
+}
+
+QStringList MainWindow::matchingLayerIdsForAsset(
+    const AnalysisDataAsset& _assetInput) const
+{
+    const QStringList _vstrAssetKeys = sourceKeysForAsset(_assetInput);
+    QStringList _vstrLayerIds;
+    if (_vstrAssetKeys.isEmpty()) {
+        return _vstrLayerIds;
+    }
+
+    const QMap<QString, QgsMapLayer*> _mapLayers =
+        QgsProject::instance()->mapLayers();
+    for (QgsMapLayer* _pLayerCurrent : _mapLayers) {
+        if (_pLayerCurrent == nullptr) {
+            continue;
+        }
+        if (sourceKeyListsIntersect(
+                _vstrAssetKeys, sourceKeysForLayer(_pLayerCurrent))) {
+            _vstrLayerIds.append(_pLayerCurrent->id());
+        }
+    }
+    return _vstrLayerIds;
+}
+
+AnalysisDataAsset MainWindow::findAssetForLayer(QgsMapLayer* _pLayerInput) const
+{
+    if (mpDataRepository == nullptr || _pLayerInput == nullptr) {
+        return AnalysisDataAsset();
+    }
+
+    const QStringList _vstrLayerKeys = sourceKeysForLayer(_pLayerInput);
+    if (_vstrLayerKeys.isEmpty()) {
+        return AnalysisDataAsset();
+    }
+
+    const QList<AnalysisDataAsset> _vAssets = mpDataRepository->getAssets();
+    for (const AnalysisDataAsset& _assetCurrent : _vAssets) {
+        if (sourceKeyListsIntersect(
+                sourceKeysForAsset(_assetCurrent), _vstrLayerKeys)) {
+            return _assetCurrent;
+        }
+    }
+    return AnalysisDataAsset();
+}
+
+bool MainWindow::removeMapLayerById(const QString& _strLayerId,
+    QString* _pstrLayerName)
+{
+    QgsMapLayer* _pLayerCurrent = QgsProject::instance()->mapLayer(_strLayerId);
+    if (_pLayerCurrent == nullptr) {
+        return false;
+    }
+
+    const QString _strLayerName = _pLayerCurrent->name();
+    const QString _strLayerSource = _pLayerCurrent->source();
+    if (_pstrLayerName != nullptr) {
+        *_pstrLayerName = _strLayerName;
+    }
+
+    MapCanvasWidget* _pCanvas = mpMapCanvasManager == nullptr
+        ? nullptr
+        : mpMapCanvasManager->activeCanvas();
+    if (_pCanvas != nullptr) {
+        _pCanvas->removeLayer(_strLayerId);
+    }
+    if (QgsProject::instance()->mapLayer(_strLayerId) != nullptr) {
+        QgsProject::instance()->removeMapLayer(_strLayerId);
+    }
+
+    if (mpDataService != nullptr) {
+        mpDataService->removeLayerRecord(_strLayerSource, _strLayerName);
+    }
+    return true;
+}
+
+bool MainWindow::removeAnalysisAssetAndLinkedLayers(
+    const AnalysisDataAsset& _assetTarget,
+    bool _bAskConfirm)
+{
+    if (mpDataRepository == nullptr
+        || _assetTarget.strAssetId.trimmed().isEmpty()) {
+        return false;
+    }
+
+    const QString _strAssetName = _assetTarget.strName.trimmed().isEmpty()
+        ? _assetTarget.strAssetId
+        : _assetTarget.strName;
+    if (_bAskConfirm) {
+        const QMessageBox::StandardButton _buttonReply = QMessageBox::question(
+            this,
+            tr("删除数据资产"),
+            tr("是否移除%1").arg(_strAssetName),
+            QMessageBox::Yes | QMessageBox::No,
+            QMessageBox::No);
+        if (_buttonReply != QMessageBox::Yes) {
+            return false;
+        }
+    }
+
+    const QStringList _vstrLayerIds = matchingLayerIdsForAsset(_assetTarget);
+    const bool _bWasPendingRun =
+        mbHasPendingRun && mstrPendingRunAssetId == _assetTarget.strAssetId;
+    const bool _bWasDisplayedResult =
+        mstrDisplayedResultAssetId == _assetTarget.strAssetId
+        || mResultLastSuccessful.strSourceAssetId == _assetTarget.strAssetId;
+
+    if (!mpDataRepository->removeAssetById(_assetTarget.strAssetId)) {
+        QMessageBox::warning(this,
+            tr("删除数据资产"),
+            tr("删除数据资产失败：记录已不存在。"));
+        return false;
+    }
+
+    int _nRemovedLayerCount = 0;
+    for (const QString& _strLayerId : _vstrLayerIds) {
+        if (removeMapLayerById(_strLayerId)) {
+            ++_nRemovedLayerCount;
+        }
+    }
+
+    if (_bWasPendingRun) {
+        clearPendingRun();
+    }
+    mmapLastSuccessfulRuns.remove(_assetTarget.strAssetId);
+
+    if (_bWasDisplayedResult) {
+        const QString _strMessage =
+            tr("已删除数据资产“%1”。").arg(_strAssetName);
+        mpctrlDockAnalysisWorkspace->clearCurrentResult(_strMessage);
+        mpVisualizationManager->clearView(_strMessage);
+        mstrDisplayedResultAssetId.clear();
+        mResultLastSuccessful = AnalysisResult();
+    }
+
+    refreshImportedAssetHint();
+    mpctrlLabelStatus->setText(
+        tr("  已删除数据资产: %1  ").arg(_strAssetName));
+    if (mpctrlLogView != nullptr) {
+        mpctrlLogView->append(
+            tr("[数据资产] 已删除 %1；同步移除图层 %2 个")
+                .arg(_strAssetName)
+                .arg(_nRemovedLayerCount));
+    }
+    return true;
+}
+
+void MainWindow::refreshImportedAssetHint()
+{
+    if (mpctrlDockAnalysisWorkspace == nullptr
+        || mpDataRepository == nullptr) {
+        return;
+    }
+
+    if (!mpDataRepository->hasAssets()) {
+        mpctrlDockAnalysisWorkspace->setDataHint(
+            tr("当前没有已导入数据资产。"));
+        return;
+    }
+
+    const AnalysisDataAsset _assetCurrent = mpDataRepository->hasCurrentAsset()
+        ? mpDataRepository->currentAsset()
+        : mpDataRepository->getAssets().first();
+    mpctrlDockAnalysisWorkspace->setDataHint(
+        tr("已导入数据资产：%1\n类型：%2\n能力：%3")
+            .arg(_assetCurrent.strName,
+                dataAssetTypeDisplayName(_assetCurrent.eAssetType),
+                capabilityText(_assetCurrent.flagsCapabilities)));
 }
 
 DataAssetType MainWindow::resolveAssetChoice(const AnalysisDataAsset& _assetInput)
@@ -1645,6 +1901,24 @@ void MainWindow::onAnalysisAssetReady(const AnalysisDataAsset& _assetReady)
     mpctrlLabelStatus->setText(tr("  就绪  "));
 }
 
+void MainWindow::onAnalysisAssetDeleteRequested(const QString& _strAssetId)
+{
+    if (mpDataRepository == nullptr) {
+        return;
+    }
+
+    const AnalysisDataAsset _assetTarget =
+        mpDataRepository->findAssetById(_strAssetId);
+    if (_assetTarget.strAssetId.trimmed().isEmpty()) {
+        QMessageBox::information(this,
+            tr("删除数据资产"),
+            tr("未找到要删除的数据资产记录。"));
+        return;
+    }
+
+    removeAnalysisAssetAndLinkedLayers(_assetTarget, true);
+}
+
 void MainWindow::onDataLoadFailed(const QString& _strErrorMsg)
 {
     mpctrlLabelStatus->setText(tr("  数据加载失败  "));
@@ -1819,18 +2093,20 @@ void MainWindow::onLayerTreeContextMenuRequested(const QPoint& _posMenu)
 void MainWindow::onRemoveSelectedLayer()
 {
     QgsMapLayer* _pLayerCurrent = currentSelectedLayer();
-    MapCanvasWidget* _pCanvas = mpMapCanvasManager->activeCanvas();
-    if (_pLayerCurrent == nullptr || _pCanvas == nullptr) {
+    if (_pLayerCurrent == nullptr) {
         return;
     }
 
     const QString _strLayerId = _pLayerCurrent->id();
-    const QString _strLayerName = _pLayerCurrent->name();
-    const QString _strLayerSource = _pLayerCurrent->source();
+    const AnalysisDataAsset _assetLinked = findAssetForLayer(_pLayerCurrent);
+    if (!_assetLinked.strAssetId.trimmed().isEmpty()) {
+        removeAnalysisAssetAndLinkedLayers(_assetLinked, true);
+        return;
+    }
 
-    _pCanvas->removeLayer(_strLayerId);
-    if (mpDataService != nullptr) {
-        mpDataService->removeLayerRecord(_strLayerSource, _strLayerName);
+    QString _strLayerName;
+    if (!removeMapLayerById(_strLayerId, &_strLayerName)) {
+        return;
     }
 
     mpctrlLabelStatus->setText(tr("  已移除图层: %1  ").arg(_strLayerName));

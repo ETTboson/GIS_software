@@ -5,6 +5,7 @@
 #include <QMainWindow>
 #include <QMap>
 #include <QPoint>
+#include <QStringList>
 
 #include <qgslayertreeview.h>
 
@@ -127,6 +128,42 @@ private:
      * @param_1 _strLayerId: 目标图层 ID
      */
     void selectLayerById(const QString& _strLayerId);
+
+    /*
+     * @brief 查找与分析资产源数据对应的工程图层 ID 列表
+     * @param_1 _assetInput: 待匹配的分析资产
+     */
+    QStringList matchingLayerIdsForAsset(
+        const AnalysisDataAsset& _assetInput) const;
+
+    /*
+     * @brief 查找与 QGIS 图层对应的分析资产
+     * @param_1 _pLayerInput: 待匹配的 QGIS 图层
+     */
+    AnalysisDataAsset findAssetForLayer(QgsMapLayer* _pLayerInput) const;
+
+    /*
+     * @brief 移除分析资产及其对应地图图层
+     * @param_1 _assetTarget: 待移除的分析资产
+     * @param_2 _bAskConfirm: 是否弹窗确认
+     */
+    bool removeAnalysisAssetAndLinkedLayers(
+        const AnalysisDataAsset& _assetTarget,
+        bool _bAskConfirm);
+
+    /*
+     * @brief 按图层 ID 移除地图图层与图层记录
+     * @param_1 _strLayerId: QGIS 图层 ID
+     * @param_2 _pstrLayerName: 可选输出图层名
+     */
+    bool removeMapLayerById(const QString& _strLayerId,
+        QString* _pstrLayerName = nullptr);
+
+    /*
+     * @brief 刷新 Analysis Workspace 顶部已导入资产提示
+     */
+    void refreshImportedAssetHint();
+
     DataAssetType resolveAssetChoice(const AnalysisDataAsset& _assetInput);
     void openToolShortcut(const QString& _strToolId);
     bool assetSupportsTool(const AnalysisDataAsset& _assetInput,
@@ -165,6 +202,7 @@ private slots:
     void onAbout();
     void onLayerLoaded(const LayerInfo& _layerInfo);
     void onAnalysisAssetReady(const AnalysisDataAsset& _assetReady);
+    void onAnalysisAssetDeleteRequested(const QString& _strAssetId);
     void onDataLoadFailed(const QString& _strErrorMsg);
     void onAnalysisFinished(const AnalysisResult& _result);
     void onAnalysisFailed(const AnalysisResult& _result);
